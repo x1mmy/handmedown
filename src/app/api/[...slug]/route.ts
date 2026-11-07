@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 
 import { getPrincipal } from "@/lib/auth/principal";
 import { assertSharedBook } from "@/lib/book-scope";
+import { assertBodyLimit } from "@/lib/body-limit";
 import { pdfExportEnabled } from "@/lib/config";
-import { AppError, isAppError } from "@/lib/errors";
+import { isAppError } from "@/lib/errors";
 import { getRepository } from "@/lib/repository";
 import { contentDispositionAttachment } from "@/lib/content-disposition";
 import { beginExport } from "@/lib/export-guard";
@@ -26,13 +27,6 @@ function clientIp(request: Request): string {
   const ip = (request as NextRequest & { ip?: string }).ip;
   if (ip) return ip.slice(0, 80);
   return "local";
-}
-
-function assertBodyLimit(request: Request, max: number): void {
-  const raw = request.headers.get("content-length");
-  if (!raw) throw new AppError(411, "Content-Length is required");
-  const size = Number(raw);
-  if (!Number.isFinite(size) || size < 0 || size > max) throw new AppError(413, "Request is too large");
 }
 
 function fail(error: unknown): Response {
