@@ -12,11 +12,13 @@ import {
   RiHome5Line,
   RiImage2Fill,
   RiImage2Line,
+  RiPencilLine,
   RiPrinterFill,
   RiPrinterLine,
 } from "@remixicon/react";
 
 import { ButtonLink } from "@/components/base/buttons/button";
+import { toast } from "@/components/base/toast/toast";
 import { cx } from "@/utils/cx";
 
 const NAV = [
@@ -176,6 +178,7 @@ export function InlineName({
       await save(next);
       setError(null);
       setEditing(false);
+      toast.success("Saved", { description: `Now called ${next}.` });
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save");
@@ -187,11 +190,18 @@ export function InlineName({
       <span className="block min-w-0">
         <button
           type="button"
+          aria-label={`${value}. Rename ${label.toLowerCase()}`}
           title={`Rename ${label.toLowerCase()}`}
-          className={cx("block max-w-full truncate text-start outline-none focus-visible:underline", displayClass)}
+          className="group flex max-w-full items-center gap-2 rounded-lg text-start outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
           onClick={() => setEditing(true)}
         >
-          {value}
+          <span className={cx("min-w-0 truncate", displayClass)}>{value}</span>
+          <span
+            aria-hidden
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background-secondary-default text-foreground-icon-secondary transition-colors group-hover:bg-accent-50 group-hover:text-accent-600"
+          >
+            <RiPencilLine className="size-4" />
+          </span>
         </button>
         {error ? (
           <span role="alert" className="block text-body-regular text-text-error-primary">
