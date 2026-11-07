@@ -194,38 +194,21 @@ export class SupabaseRepository {
   }
 
   async getRecipe(principal: Principal, bookId: string, recipeId: string): Promise<RecipeDetail> {
-    const book = await this.getBook(principal, bookId);
+    assertSharedBook(bookId);
     const { supabase, userId } = await this.client(principal);
-    const { data, error } = await supabase.from("recipes").select("*").eq("id", recipeId).eq("book_id", bookId).maybeSingle();
-    raise(error);
-    if (!data) throw new AppError(404, "Recipe not found");
-    const recipe = data as RecipeRow;
-    const match = (await this.cards(supabase, userId, bookId, {})).find((item) => item.id === recipeId);
-    return {
-      ...(match ?? {
-        id: recipe.id,
-        title: recipe.title,
-        course: recipe.course,
-        minutes: recipe.minutes,
-        servings: recipe.servings,
-        cookedCount: recipe.cooked_count,
-        handedDownBy: recipe.handed_down_by,
-        recipeBy: recipe.recipe_by ?? "",
-        kitchenId: recipe.kitchen_id,
-        kitchenName: book.kitchens.find((kitchen) => kitchen.id === recipe.kitchen_id)?.name ?? "Kitchen",
-        favourite: false,
-        heroUrl: recipe.hero_media_id ? `/api/media/${recipe.hero_media_id}` : null,
-        marginNote: recipe.margin_note,
-        ingredientCount: recipe.ingredients_json.length,
-      }),
-      version: recipe.version,
-      ingredients: recipe.ingredients_json,
-      steps: recipe.steps_json,
-      canEdit: book.myKitchenIds.includes(recipe.kitchen_id),
-      deletedAt: recipe.deleted_at ? Date.parse(recipe.deleted_at) : null,
-      bookId,
-    };
+    // Book, recipe and favourite flag in one parallel round trip.
+    const [book, recipeResult, favResult] = await Promise.all([
+      this.getBook(principal, bookId),
+      supabase.from("recipes").select("*").eq("id", recipeId).eq("book_id", bookId).maybeSingle(),
+      supabase.from("recipe_favourites").select("recipe_id").eq("book_id", bookId).eq("recipe_id", recipeId).eq("user_id", userId).maybeSingle(),
+    ]);
+    raise(recipeResult.error);
+    raise(favResult.error);
+    if (!recipeResult.data) throw new AppError(404, "Recipe not found");
+    const recipe = recipeResult.data as RecipeRow;
+    return toDetail(recipe, book, Boolean(favResult.data));
   }
+
 
   async createBookFromDraft(
     principal: Principal,
@@ -625,6 +608,14 @@ export class SupabaseRepository {
     const encoded = await reencodeUpload(input.bytes, input.declaredMime);
     const { supabase } = await this.client(principal);
     const recipe = await this.requireRecipe(supabase, bookId, recipeId);
+    // No sign-in, so storage needs a hard ceiling: album photos plus one cover per recipe.
+    const { count, error: countError } = await supabase
+      .from("media_assets")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .neq("status", "rejected");
+    raise(countError);
+    if ((count ?? 0) >= MAX_PHOTOS + MAX_RECIPES) throw new AppError(422, "This book has enough photographs");
     const mediaId = await this.storeImage(supabase, bookId, recipe.kitchen_id, encoded);
     const { data, error } = await supabase
       .from("recipes")
@@ -634,18 +625,45 @@ export class SupabaseRepository {
       .select("id");
     raise(error);
     if (!data?.length) throw new AppError(404, "Recipe not found");
+    if (recipe.hero_media_id && recipe.hero_media_id !== mediaId) await this.releaseMedia(supabase, bookId, recipe.hero_media_id);
     return { mediaId, heroUrl: `/api/media/${mediaId}` };
   }
 
   async clearRecipePhoto(principal: Principal, bookId: string, recipeId: string): Promise<void> {
+    assertSharedBook(bookId);
     const { supabase } = await this.client(principal);
-    await this.requireRecipe(supabase, bookId, recipeId);
+    const recipe = await this.requireRecipe(supabase, bookId, recipeId);
     const { error } = await supabase
       .from("recipes")
       .update({ hero_media_id: null, updated_at: new Date().toISOString() })
       .eq("id", recipeId)
       .eq("book_id", bookId);
     raise(error);
+    if (recipe.hero_media_id) await this.releaseMedia(supabase, bookId, recipe.hero_media_id);
+  }
+
+  /**
+   * Deletes a replaced cover photo's object and row, unless an album photo
+   * still uses it. Best effort: a failed cleanup never fails the user's save.
+   */
+  private async releaseMedia(supabase: SupabaseClient, bookId: string, mediaId: string): Promise<void> {
+    try {
+      const { count, error } = await supabase
+        .from("album_photos")
+        .select("id", { count: "exact", head: true })
+        .eq("book_id", bookId)
+        .eq("media_id", mediaId);
+      raise(error);
+      if ((count ?? 0) > 0) return;
+      const removed = await createServiceClient().storage.from("media").remove([mediaObjectPath(bookId, mediaId)]);
+      if (removed.error) throw removed.error;
+      const deleted = await supabase.from("media_assets").delete().eq("id", mediaId).eq("book_id", bookId);
+      if (deleted.error) {
+        await supabase.from("media_assets").update({ status: "rejected" }).eq("id", mediaId).eq("book_id", bookId);
+      }
+    } catch (caught) {
+      console.error("Could not release replaced photo", mediaId, caught);
+    }
   }
 
   async readMedia(principal: Principal, mediaId: string): Promise<{ bytes: Buffer; mime: string }> {
@@ -677,10 +695,16 @@ export class SupabaseRepository {
     bleed: boolean,
     embed: boolean,
   ): Promise<ExportSnapshot> {
-    const book = await this.getBook(principal, bookId);
-    const recipes = await this.listRecipes(principal, bookId, {});
-    const albums = await this.listAlbums(principal, bookId);
-    const detailed = await Promise.all(recipes.map((recipe) => this.getRecipe(principal, bookId, recipe.id)));
+    const { supabase } = await this.client(principal);
+    // One parallel batch instead of a query per recipe.
+    const [book, rowsResult, albums] = await Promise.all([
+      this.getBook(principal, bookId),
+      supabase.from("recipes").select("*").eq("book_id", bookId).is("deleted_at", null),
+      this.listAlbums(principal, bookId),
+    ]);
+    raise(rowsResult.error);
+    const detailed = ((rowsResult.data ?? []) as RecipeRow[]).map((row) => toDetail(row, book, false));
+    const recipes = detailed;
     let embedded = 0;
     return {
       version: 1,
@@ -790,4 +814,30 @@ export class SupabaseRepository {
     const snapshot = data.snapshot as ExportSnapshot;
     return { bytes: Buffer.from(await downloaded.data.arrayBuffer()), filename: `${snapshot.title}.pdf` };
   }
+}
+
+/** One recipe row to the detail shape the cook view and print share. */
+function toDetail(recipe: RecipeRow, book: BookDetail, favourite: boolean): RecipeDetail {
+  return {
+    id: recipe.id,
+    title: recipe.title,
+    course: recipe.course,
+    minutes: recipe.minutes,
+    servings: recipe.servings,
+    cookedCount: recipe.cooked_count,
+    handedDownBy: recipe.handed_down_by,
+    recipeBy: recipe.recipe_by ?? "",
+    kitchenId: recipe.kitchen_id,
+    kitchenName: book.kitchens.find((kitchen) => kitchen.id === recipe.kitchen_id)?.name ?? "Kitchen",
+    favourite,
+    heroUrl: recipe.hero_media_id ? `/api/media/${recipe.hero_media_id}` : null,
+    marginNote: recipe.margin_note,
+    ingredientCount: recipe.ingredients_json?.length ?? 0,
+    version: recipe.version,
+    ingredients: recipe.ingredients_json ?? [],
+    steps: recipe.steps_json ?? [],
+    canEdit: book.myKitchenIds.includes(recipe.kitchen_id),
+    deletedAt: recipe.deleted_at ? Date.parse(recipe.deleted_at) : null,
+    bookId: book.id,
+  };
 }

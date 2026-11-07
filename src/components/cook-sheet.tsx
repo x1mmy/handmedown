@@ -305,7 +305,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
                   >
                     <span className={cx("flex items-baseline justify-between gap-3 text-headline-regular", checked[index] && "text-text-tertiary line-through")}>
                       <span>{ingredient.item || ingredient.original_text}</span>
-                      {quantities[index] ? <span className="shrink-0 text-headline-semibold [font-variant-numeric:diagonal-fractions]">{quantities[index]}</span> : null}
+                      {quantities[index] ? <span className="shrink-0 text-headline-semibold">{quantities[index]}</span> : null}
                     </span>
                   </Checkbox>
                 </li>
