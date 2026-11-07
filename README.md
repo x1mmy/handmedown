@@ -98,6 +98,8 @@ The hosted app is one shared book. The browser never talks to Postgres or Storag
 | `SUPABASE_SECRET_KEY` | Server only. Table and private Storage access. |
 | `HMD_BOOK_ID` | Optional. Defaults to `10000000-0000-4000-8000-000000000001`, the seeded book titled The Fam. |
 
+`vercel.json` pins the server functions to `hnd1` (Tokyo), next to the Supabase project in `ap-northeast-1`. Every page reads the database, so keeping them in the same region is the biggest single speed factor. Change both together if the database ever moves.
+
 PDF export uses Playwright and Chromium. Vercel serverless cannot run that worker, so when `VERCEL=1` the export button is replaced with the browser print dialog and the export endpoint returns a clear error. The on-screen A5 preview still works. `next build` externalizes `playwright` so the build does not need a browser.
 
 ## Footer
