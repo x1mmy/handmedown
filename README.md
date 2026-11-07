@@ -1,1 +1,78 @@
-# handmedown
+# Hand Me Down
+
+A private family recipe book for the browser. Recipes live in household kitchens inside a shared book. The example book, The Anjum & Cooper Table, opens with no environment variables.
+
+Owner: Zimraan Anjum / Stash Labs.
+
+## Run the demo
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000. You land in the example book: recipes, cook mode, album, kitchens, and the A5 preview. Nothing is written to Supabase.
+
+To start your own book, use **Start our own book**, sign in with any email on the local demo form, and submit the draft. Repeating that submit with the same draft key returns the same book.
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+## Environment
+
+Copy `.env.example`.
+
+| Name | Where it is read |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Browser and server. The project URL. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server. The publishable client key. |
+| `SUPABASE_SECRET_KEY` | Server only. Private storage uploads and PDF bytes when the Supabase adapter is on. Never commit a real value. |
+| `HMD_DATA_ADAPTER` | `demo` (default) or `supabase`. |
+
+With `HMD_DATA_ADAPTER=demo`, or with the variable unset, the app uses the isolated file-backed demo adapter in `.data/`. The example book and its six photographs ship in `public/seed/`.
+
+Set `HMD_DATA_ADAPTER=supabase` only after the migrations have been applied to a database you mean to use. Magic-link sign-in uses the publishable key. Add `http://localhost:3000/auth/callback` to the Supabase auth redirect URLs.
+
+## Migrations
+
+SQL lives in `supabase/migrations/`. It creates the book, kitchen, recipe, invite, media, and export tables, composite foreign keys, row level security on every table, and privileged functions in the `private` schema. Public functions are security invoker wrappers.
+
+**These migrations are not applied to the remote project** (`https://gknpxsexkmkhomsclpwi.supabase.co`). Do not run them there until that target is approved.
+
+Local checks, against a Supabase stack on your machine:
+
+```bash
+supabase start
+supabase db reset
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f supabase/tests/rls.sql
+```
+
+`supabase/tests/rls.sql` rolls back. It checks that an outsider sees no rows, a self-grant into `kitchen_members` fails, and a cross-book recipe insert fails the foreign key. The unit tests in `tests/demo-repository.test.ts` cover the same rules on the demo adapter, including replay, concurrent cooks, stale edits, the 6 second undo window, and the kitchen-delete guard. `npm test` does not need Docker.
+
+## What is real, and what is still pending
+
+Real in this repo:
+
+- Light-mode mobile-first UI for recipes, cook mode, editing, albums, kitchens, and A5 preview.
+- Exact integer fraction scaling (`1 1/4 × 2 = 2 1/2`).
+- Session-local ingredient and step checks. Screen Wake Lock, with a plain instruction when the browser refuses it.
+- Soft delete with a 6 second undo, per-user favourites, and an idempotent cooked counter.
+- Revocable hashed invites. Redeeming an invite grants book read. Kitchen membership is a separate approval.
+- Upload checks reject non-images. Accepted files are re-encoded to JPEG and the EXIF segment is stripped.
+- Print preview and the PDF worker share one pagination model. The worker is Playwright with every network request aborted. Page size is A5 148×210mm, or 154×216mm when bleed is on.
+
+Pending until you opt in:
+
+- The Supabase adapter is implemented and typechecked, and it is not the default. The remote database does not have these tables yet.
+- Private Storage uploads in that adapter need `SUPABASE_SECRET_KEY`. The demo stores new photos in process memory, so they disappear when the server restarts. Seed photos stay on disk.
+- PDF export needs Chromium: `npx playwright install chromium`. If the browser is missing, the preview still works and the export reports the failure.
+- The PDF uses built-in serif and sans stacks because the worker is not allowed to fetch fonts. Page breaks still come from the shared model, not from measuring a live layout.
+- Demo sign-in is a local email cookie. It is replaced by the magic link when `HMD_DATA_ADAPTER=supabase`.
+
+## Footer
+
+Every page ends with the exact words “Built by Stash Labs”, set in small caps, linking to `STASH_LABS_URL` in `src/lib/constants.ts` (`https://www.stashlabs.com.au/`).

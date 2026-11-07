@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: #faf8f4;
+}
+
+body {
+  overflow-x: clip;
+  min-height: 100dvh;
+  background-color: #faf8f4;
+  background-image: radial-gradient(rgba(23, 22, 20, 0.028) 1px, transparent 0);
+  background-size: 18px 18px;
+  color: #171614;
+  font-variant-numeric: tabular-nums;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 1px solid #9e3b24;
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: #857f77;
+}
+
+.micro {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #857f77;
+  font-variant-numeric: tabular-nums;
+}
+
+.dog-ear::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  background: #efece4;
+  border-left: 1px solid #e3ded4;
+  border-bottom: 1px solid #e3ded4;
+  clip-path: polygon(0 0, 100% 100%, 100% 0);
+}
+
+.tape::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  left: 28px;
+  width: 68px;
+  height: 18px;
+  background: rgba(230, 219, 194, 0.72);
+  transform: rotate(-1.5deg);
+}
