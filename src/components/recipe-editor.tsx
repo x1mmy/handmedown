@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { ApiError, api } from "@/lib/client-api";
 import { formatIngredientLines, parseIngredientLines } from "@/lib/ingredients";
@@ -19,7 +18,6 @@ export function RecipeEditor({
   kitchens: { id: string; name: string }[];
   recipe?: RecipeDetail;
 }) {
-  const router = useRouter();
   const [title, setTitle] = useState(recipe?.title ?? "");
   const [handedDownBy, setHandedDownBy] = useState(recipe?.handedDownBy ?? "");
   const [course, setCourse] = useState<Course>(recipe?.course ?? "mains");
@@ -30,14 +28,17 @@ export function RecipeEditor({
   const [ingredients, setIngredients] = useState(recipe ? formatIngredientLines(recipe.ingredients) : "");
   const [steps, setSteps] = useState(recipe?.steps.join("\n") ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<{ id: string; version: number } | null>(
+    recipe ? { id: recipe.id, version: recipe.version } : null,
+  );
   const kitchenName = kitchens.find((kitchen) => kitchen.id === kitchenId)?.name ?? "Kitchen";
 
   const previewNote = useMemo(() => note.trim(), [note]);
 
-  async function save() {
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
     setError(null);
-    setSaving(true);
     try {
       const body = {
         kitchenId,
@@ -48,37 +49,44 @@ export function RecipeEditor({
         servings: Number(servings),
         marginNote: note,
         ingredients: parseIngredientLines(ingredients),
-        steps: steps.split("\n").map((step) => step.trim()).filter(Boolean),
-        version: recipe?.version,
+        steps: steps
+          .split("\n")
+          .map((step) => step.trim())
+          .filter(Boolean),
+        version: identity?.version,
       };
-      if (recipe) {
-        const result = await api<{ version: number }>(`/api/books/${bookId}/recipes/${recipe.id}`, {
+      if (identity) {
+        const result = await api<{ version: number }>(`/api/books/${bookId}/recipes/${identity.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        void result;
-        router.push(`/books/${bookId}/recipes/${recipe.id}`);
-        router.refresh();
+        setIdentity({ id: identity.id, version: result.version });
       } else {
         const result = await api<{ id: string }>(`/api/books/${bookId}/recipes`, {
           method: "POST",
           body: JSON.stringify(body),
         });
-        router.push(`/books/${bookId}/recipes/${result.id}`);
-        router.refresh();
+        setIdentity({ id: result.id, version: 1 });
       }
+      setNotice("Saved");
     } catch (caught) {
+      setNotice(null);
       if (caught instanceof ApiError && caught.status === 409) {
         setError("Someone else saved this recipe. Reload to see their version.");
       } else {
         setError(caught instanceof ApiError ? caught.message : "Could not save");
       }
-      setSaving(false);
     }
   }
 
   return (
-    <div className="grid items-start gap-8 desk:grid-cols-2">
+    <form
+      className="grid items-start gap-8 desk:grid-cols-2"
+      onSubmit={(event) => void save(event)}
+      onInput={() => {
+        if (notice) setNotice(null);
+      }}
+    >
       <div>
         <p className="micro">Filing into {kitchenName}</p>
         <h2 className="mt-1 font-serif text-[28px] font-normal">{recipe ? "Edit recipe" : "Add a family recipe"}</h2>
@@ -123,10 +131,21 @@ export function RecipeEditor({
         <Field label="Method, one step per line">
           <textarea className={`${area} min-h-40`} value={steps} onChange={(event) => setSteps(event.target.value)} />
         </Field>
-        {error ? <p className="mb-3 text-sm text-accent">{error}</p> : null}
-        <button type="button" disabled={saving} onClick={() => void save()} className="inline-flex min-h-11 items-center border border-ink bg-ink px-5 text-[12px] font-medium uppercase tracking-[0.08em] text-sheet disabled:opacity-50">
-          {saving ? "Saving" : "Save to family book"}
-        </button>
+        {error ? (
+          <p className="mb-3 text-sm text-accent" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <p className="flex flex-wrap items-center gap-3">
+          <button type="submit" className="inline-flex min-h-11 items-center border border-ink bg-ink px-5 text-[12px] font-medium uppercase tracking-[0.08em] text-sheet">
+            Save to family book
+          </button>
+          {notice ? (
+            <span role="status" className="text-sm">
+              {notice}
+            </span>
+          ) : null}
+        </p>
       </div>
       <div>
         <p className="micro mb-2">Live A5 page preview</p>
@@ -149,7 +168,7 @@ export function RecipeEditor({
           </div>
         </div>
       </div>
-    </div>
+    </form>
   );
 }
 

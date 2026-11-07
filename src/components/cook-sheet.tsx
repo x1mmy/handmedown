@@ -23,6 +23,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   const [error, setError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(Boolean(recipe.deletedAt));
   const [stamp, setStamp] = useState(0);
+  const [stampDate, setStampDate] = useState("");
   const reduce = useReducedMotion();
   const stepRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const stepped = useRef(false);
@@ -111,7 +112,10 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         { method: "POST", body: JSON.stringify({ idempotencyKey: key }) },
       );
       sessionStorage.removeItem(storageKey);
-      if (result.cookedCount !== cooked) setStamp((value) => value + 1);
+      if (result.cookedCount !== cooked) {
+        setStamp((value) => value + 1);
+        setStampDate(new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }));
+      }
       setCooked(result.cookedCount);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not record this cooking");
@@ -157,8 +161,34 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   }
 
   return (
+    <div>
+      {deleted ? (
+        <p className="mb-3 text-sm" role="status">
+          Moved to trash.
+        </p>
+      ) : null}
+      <motion.div
+        className="grid"
+        initial={false}
+        animate={{ gridTemplateRows: deleted ? "0fr" : "1fr" }}
+        transition={reduce ? { duration: 0 } : tween(0.2)}
+      >
+        <div className="overflow-hidden">
     <article className={`relative border border-rule bg-sheet px-5 py-6 desk:px-12 desk:py-12 ${cookMode ? "cook-on" : ""}`}>
       <FoldedCorner show={favourite} />
+      {stamp > 0 ? (
+        <motion.p
+          key={stamp}
+          role="status"
+          className="pointer-events-none absolute right-4 top-16 z-10 origin-center border-2 border-accent px-3 py-2 text-center text-[11px] uppercase tracking-[0.14em] text-accent"
+          initial={reduce ? false : { scale: 1.1, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={reduce ? { duration: 0 } : tween(0.24)}
+        >
+          Made
+          <span className="mt-1 block tabular-nums normal-case tracking-normal">{stampDate}</span>
+        </motion.p>
+      ) : null}
       <header className="flex flex-wrap items-end justify-between gap-4 border-b-[1.5px] border-ink pb-5">
         <div>
           <p className="micro">
@@ -175,24 +205,11 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
             type="button"
             data-motion="true"
             className={`${solid} relative`}
-            whileTap={reduce ? undefined : { scale: 0.98 }}
+            whileTap={reduce ? undefined : { scale: 0.97 }}
             transition={tween(0.16)}
             onClick={() => void madeThis()}
           >
             We made this · <RollingText value={String(cooked)} />
-            <AnimatePresence>
-              {stamp > 0 ? (
-                <motion.span
-                  key={stamp}
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 border border-[#f3c6b8]"
-                  initial={{ opacity: 0.85 }}
-                  animate={{ opacity: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={tween(0.28)}
-                />
-              ) : null}
-            </AnimatePresence>
           </motion.button>
           <button type="button" className={line} onClick={() => void toggleFavourite()}>
             {favourite ? "Pinned favourite" : "Pin favourite"}
@@ -216,7 +233,6 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         </p>
       ) : null}
       {error ? <p className="mt-4 text-sm text-accent">{error}</p> : null}
-      {deleted ? <p className="mt-4 text-sm">This recipe is in the trash. Undo is available for 6 seconds.</p> : null}
 
       <div className="mt-7 grid gap-8 desk:grid-cols-[300px_1fr] desk:gap-11">
         <div>
@@ -266,7 +282,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
                       className="absolute left-0 top-1/2 h-px w-full origin-left bg-current"
                       initial={false}
                       animate={{ scaleX: checked[index] ? 1 : 0 }}
-                      transition={reduce ? { duration: 0 } : tween(0.24)}
+                      transition={reduce ? { duration: 0 } : tween(0.2)}
                     />
                   </span>
                   <RollingText value={quantities[index] ?? ""} className="font-semibold" />
@@ -295,15 +311,15 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
                 onClick={() => setDone((current) => current.map((item, itemIndex) => (itemIndex === index ? !item : item)))}
                 className="relative block w-full border-b border-rule py-4 pl-4 text-left"
                 initial={false}
-                animate={{ opacity: isDone ? 0.34 : 1, x: isActive ? 4 : 0 }}
-                transition={reduce ? { duration: 0 } : tween(0.24)}
+                animate={{ opacity: isDone ? 0.5 : 1 }}
+                transition={reduce ? { duration: 0 } : tween(0.2)}
               >
                 <motion.span
                   aria-hidden
                   className="absolute bottom-0 left-0 top-0 w-0.5 origin-top bg-accent"
                   initial={false}
                   animate={{ scaleY: isActive ? 1 : 0 }}
-                  transition={reduce ? { duration: 0 } : tween(0.24)}
+                  transition={reduce ? { duration: 0 } : tween(0.2)}
                 />
                 <div className={`micro ${isActive ? "text-accent" : ""}`}>
                   Step {String(index + 1).padStart(2, "0")} · {isDone ? "Completed" : isActive ? "Active step" : "Waiting"}
@@ -315,6 +331,9 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         </div>
       </div>
 
+    </article>
+        </div>
+      </motion.div>
       <AnimatePresence>
         {toast ? (
           <motion.div
@@ -330,17 +349,10 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
             <button type="button" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#f3c6b8]" onClick={() => void undo()}>
               Undo
             </button>
-            <motion.span
-              aria-hidden
-              className="absolute bottom-0 left-0 h-px w-full origin-left bg-[#f3c6b8]"
-              initial={{ scaleX: 1 }}
-              animate={{ scaleX: reduce ? 1 : 0 }}
-              transition={{ duration: reduce ? 0 : 6, ease: "linear" }}
-            />
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </article>
+    </div>
   );
 }
 

@@ -11,16 +11,16 @@ export function RecipeGrid({ bookId, recipes }: { bookId: string; recipes: Recip
   const reduce = useReducedMotion();
   return (
     <div className="grid grid-cols-1 border-l border-rule desk:grid-cols-3">
-      {recipes.map((recipe, index) => (
+      {recipes.map((recipe) => (
         <motion.div
           key={recipe.id}
-          initial={reduce ? false : { opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduce ? { duration: 0 } : { ...tween(0.28), delay: Math.min(index, 8) * 0.045 }}
+          whileHover={reduce ? undefined : { y: -2 }}
+          whileFocus={reduce ? undefined : { y: -2 }}
+          transition={tween(0.2)}
         >
           <Link
             href={`/books/${bookId}/recipes/${recipe.id}`}
-            className="press relative flex h-full flex-col justify-between border-b border-r border-rule p-5 hover:bg-sheet/70"
+            className="press relative flex h-full flex-col justify-between border-b border-r border-rule p-5 hover:bg-sheet/70 focus-visible:bg-sheet/70"
           >
             <FoldedCorner show={recipe.favourite} />
             {recipe.heroUrl ? (

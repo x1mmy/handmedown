@@ -24,9 +24,9 @@ export function PageTurn({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
       key={pathname}
-      initial={enter ? { opacity: 0, y: 10 } : false}
+      initial={enter ? { opacity: 0, y: 6 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={tween(0.26)}
+      transition={tween(0.24)}
     >
       {children}
     </motion.div>
@@ -48,12 +48,12 @@ export function FoldedCorner({ show }: { show: boolean }) {
       {show ? (
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute right-0 top-0 z-10 h-[22px] w-[22px] origin-top-right border-b border-l border-rule bg-[#efece4]"
+          className="pointer-events-none absolute right-0 top-0 z-10 h-[22px] w-[22px] origin-top-right bg-accent"
           style={{ clipPath: "polygon(0 0, 100% 100%, 100% 0)" }}
-          initial={reduce ? false : { rotate: -32, opacity: 0 }}
+          initial={reduce ? false : { rotate: -28, opacity: 0 }}
           animate={{ rotate: 0, opacity: 1 }}
-          exit={reduce ? { opacity: 0 } : { rotate: -22, opacity: 0 }}
-          transition={tween(0.28)}
+          exit={reduce ? { opacity: 0 } : { rotate: -18, opacity: 0 }}
+          transition={tween(0.2)}
         />
       ) : null}
     </AnimatePresence>
@@ -85,6 +85,20 @@ export function RollingText({ value, className = "" }: { value: string; classNam
   );
 }
 
+export function PushRow({ fresh, children }: { fresh: boolean; children: React.ReactNode }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      className="grid min-w-0"
+      initial={fresh && !reduce ? { gridTemplateRows: "0fr" } : false}
+      animate={{ gridTemplateRows: "1fr" }}
+      transition={reduce ? { duration: 0 } : tween(0.22)}
+    >
+      <div className="min-w-0 overflow-hidden">{children}</div>
+    </motion.div>
+  );
+}
+
 export function InkTick({ checked }: { checked: boolean }) {
   const reduce = useReducedMotion();
   return (
@@ -98,7 +112,7 @@ export function InkTick({ checked }: { checked: boolean }) {
         strokeLinejoin="round"
         initial={false}
         animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }}
-        transition={reduce ? { duration: 0 } : tween(0.26)}
+        transition={reduce ? { duration: 0 } : tween(0.2)}
       />
     </svg>
   );

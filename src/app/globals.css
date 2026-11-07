@@ -53,7 +53,7 @@ select {
 
 .skeleton {
   background: #f4efe6;
-  animation: paper-breathe 1.8s ease-out infinite;
+  animation: paper-breathe 700ms ease-out 1 forwards;
 }
 
 @keyframes paper-breathe {
@@ -69,7 +69,7 @@ select {
   }
   button:not([data-motion]):active,
   .press:active {
-    transform: scale(0.98);
+    transform: scale(0.97);
   }
 }
 

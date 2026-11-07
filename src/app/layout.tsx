@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Caveat, Inter, Newsreader } from "next/font/google";
 
+import { MotionRoot } from "@/components/motion-root";
 import { MotionShell } from "@/components/motion";
 import { SiteFooter } from "@/components/site-footer";
 
@@ -31,10 +32,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable} ${hand.variable}`}>
       <body className="flex min-h-dvh flex-col font-sans text-[15px] leading-normal text-ink antialiased">
-        <div className="flex-1">
-          <MotionShell>{children}</MotionShell>
-        </div>
-        <SiteFooter />
+        <MotionRoot>
+          <div className="flex min-h-dvh flex-col">
+            <div className="flex-1">
+              <MotionShell>{children}</MotionShell>
+            </div>
+            <SiteFooter />
+          </div>
+        </MotionRoot>
       </body>
     </html>
   );

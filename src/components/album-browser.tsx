@@ -1,10 +1,10 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { tween } from "@/components/motion";
+import { PushRow, tween } from "@/components/motion";
 
 import type { AlbumView } from "@/lib/types";
 
@@ -23,6 +23,7 @@ export function AlbumBrowser({
   const [caption, setCaption] = useState("");
   const [kitchenId, setKitchenId] = useState(kitchens[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [freshId, setFreshId] = useState<string | null>(null);
   const reduce = useReducedMotion();
   const visible = albumId === "all" ? albums.flatMap((album) => album.photos.map((photo) => ({ ...photo, album: album.name }))) : albums.find((album) => album.id === albumId)?.photos.map((photo) => ({ ...photo, album: albums.find((item) => item.id === albumId)?.name ?? "" })) ?? [];
   const count = albums.reduce((sum, album) => sum + album.photos.length, 0);
@@ -57,11 +58,12 @@ export function AlbumBrowser({
     form.set("caption", caption);
     if (kitchenId) form.set("kitchenId", kitchenId);
     const response = await fetch(`/api/books/${bookId}/media`, { method: "POST", body: form });
+    const body = (await response.json().catch(() => ({}))) as { message?: string; photoId?: string };
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { message?: string };
       setError(body.message ?? "Unsafe upload rejected");
       return;
     }
+    if (body.photoId) setFreshId(body.photoId);
     setCaption("");
     router.refresh();
   }
@@ -124,23 +126,54 @@ export function AlbumBrowser({
         <p className="py-10 text-inksoft">This album is waiting for its first photograph.</p>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-4 desk:grid-cols-4 desk:gap-7">
-          {visible.map((photo, index) => (
-            <motion.figure
-              key={photo.id}
-              className="relative border border-[#dfd9ce] bg-sheet px-3 pb-6 pt-3"
-              initial={reduce ? false : { opacity: 0, y: 18, rotate: index % 2 ? 2.4 : -2.4 }}
-              animate={{ opacity: 1, y: 0, rotate: index % 2 ? 1.1 : -1.1 }}
-              transition={reduce ? { duration: 0 } : { ...tween(0.28), delay: Math.min(index, 8) * 0.04 }}
-            >
-              <span className="absolute -top-2 left-1/2 h-4 w-14 -translate-x-1/2 bg-[rgba(230,219,194,0.72)]" />
-              <img src={photo.url} alt="" className="aspect-square w-full object-cover" />
-              <figcaption className="mt-3 font-hand text-xl leading-snug text-handink">{photo.caption}</figcaption>
-              <p className="micro mt-1">{photo.meta}</p>
-            </motion.figure>
-          ))}
+          {visible.map((photo) => {
+            const fresh = photo.id === freshId;
+            return (
+              <PushRow key={photo.id} fresh={fresh}>
+                <motion.figure
+                  className="relative border border-[#dfd9ce] bg-sheet px-3 pb-6 pt-3"
+                  initial={fresh && !reduce ? { opacity: 0, rotate: 3 } : false}
+                  animate={{ opacity: 1, rotate: 1 }}
+                  transition={reduce ? { duration: 0 } : tween(0.2)}
+                >
+                  <span className="absolute -top-2 left-1/2 h-4 w-14 -translate-x-1/2 bg-[rgba(230,219,194,0.72)]" />
+                  <img src={photo.url} alt="" className="aspect-square w-full object-cover" />
+                  <TypedCaption text={photo.caption} play={fresh} />
+                  <p className="micro mt-1">{photo.meta}</p>
+                </motion.figure>
+              </PushRow>
+            );
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+function TypedCaption({ text, play }: { text: string; play: boolean }) {
+  const reduce = useReducedMotion();
+  const [count, setCount] = useState(play && !reduce ? 0 : text.length);
+
+  useEffect(() => {
+    if (!play || reduce) {
+      setCount(text.length);
+      return;
+    }
+    setCount(0);
+    const step = Math.max(16, Math.floor(280 / Math.max(text.length, 1)));
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      setCount(index);
+      if (index >= text.length) window.clearInterval(timer);
+    }, step);
+    return () => window.clearInterval(timer);
+  }, [play, reduce, text]);
+
+  return (
+    <figcaption className="mt-3 min-h-[1.6em] font-hand text-xl leading-snug text-handink" aria-label={text}>
+      {text.slice(0, count)}
+    </figcaption>
   );
 }
 
