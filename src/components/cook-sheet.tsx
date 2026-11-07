@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { FoldedCorner, InkTick, RollingText, tween } from "@/components/motion";
 import { ApiError, api } from "@/lib/client-api";
+import { resolveCookedUpdate, undoToastRemaining } from "@/lib/persistence-feedback";
 import { formatQuantity, scaleServings } from "@/lib/fractions";
 import { COURSE_LABEL, formatMinutes } from "@/lib/format";
 import type { RecipeDetail } from "@/lib/types";
@@ -27,6 +28,13 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   const reduce = useReducedMotion();
   const stepRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const stepped = useRef(false);
+  const undoTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const raw = sessionStorage.getItem(`hmd-checks:${recipe.id}`);
@@ -98,6 +106,13 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
     [recipe.ingredients, recipe.servings, servings],
   );
 
+  function clearUndoTimer() {
+    if (undoTimer.current !== null) {
+      window.clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+  }
+
   async function madeThis() {
     setError(null);
     const storageKey = `hmd-cook:${recipe.id}`;
@@ -106,18 +121,28 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
       key = crypto.randomUUID();
       sessionStorage.setItem(storageKey, key);
     }
+    const previousCount = cooked;
+    const previousStamp = stamp;
+    const previousDate = stampDate;
+    setCooked(previousCount + 1);
+    setStamp(previousStamp + 1);
+    setStampDate(new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }));
     try {
-      const result = await api<{ cookedCount: number }>(
+      const result = await api<{ cookedCount: number; applied: boolean }>(
         `/api/books/${recipe.bookId}/recipes/${recipe.id}/cook`,
         { method: "POST", body: JSON.stringify({ idempotencyKey: key }) },
       );
       sessionStorage.removeItem(storageKey);
-      if (result.cookedCount !== cooked) {
-        setStamp((value) => value + 1);
-        setStampDate(new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }));
+      const resolved = resolveCookedUpdate(result.cookedCount, result.applied);
+      setCooked(resolved.count);
+      if (!resolved.stamped) {
+        setStamp(previousStamp);
+        setStampDate(previousDate);
       }
-      setCooked(result.cookedCount);
     } catch (caught) {
+      setCooked(previousCount);
+      setStamp(previousStamp);
+      setStampDate(previousDate);
       setError(caught instanceof ApiError ? caught.message : "Could not record this cooking");
     }
   }
@@ -125,10 +150,16 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   async function remove() {
     setError(null);
     try {
-      await api(`/api/books/${recipe.bookId}/recipes/${recipe.id}`, { method: "DELETE" });
+      const result = await api<{ deletedAt: number }>(`/api/books/${recipe.bookId}/recipes/${recipe.id}`, {
+        method: "DELETE",
+      });
       setDeleted(true);
       setToast(`“${recipe.title}” moved to trash.`);
-      window.setTimeout(() => setToast(null), 6000);
+      clearUndoTimer();
+      undoTimer.current = window.setTimeout(() => {
+        setToast(null);
+        undoTimer.current = null;
+      }, undoToastRemaining(result.deletedAt, Date.now()));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not delete this recipe");
     }
@@ -137,6 +168,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   async function undo() {
     try {
       await api(`/api/books/${recipe.bookId}/recipes/${recipe.id}/undo`, { method: "POST" });
+      clearUndoTimer();
       setDeleted(false);
       setToast(null);
       router.refresh();

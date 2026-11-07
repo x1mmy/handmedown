@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { PushRow, tween } from "@/components/motion";
@@ -12,9 +12,17 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
   const [name, setName] = useState("");
   const [invite, setInvite] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [incoming, setIncoming] = useState<string | null>(null);
   const [asked, setAsked] = useState<string | null>(null);
   const reduce = useReducedMotion();
+  const knownMembers = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    const next = new Set<string>();
+    for (const kitchen of desk.kitchens) {
+      for (const member of kitchen.members) next.add(`${kitchen.id}:${member.userId}`);
+    }
+    knownMembers.current = next;
+  }, [desk]);
 
   async function send(url: string, init?: RequestInit) {
     setError(null);
@@ -42,7 +50,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
           </div>
           <ul className="mt-3 divide-y divide-rule border-y border-rule">
             {kitchen.members.map((member) => {
-              const fresh = member.userId === incoming;
+              const fresh = knownMembers.current !== null && !knownMembers.current.has(`${kitchen.id}:${member.userId}`);
               return (
                 <li key={member.userId}>
                   <PushRow fresh={fresh}>
@@ -109,10 +117,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
                     <button
                       type="button"
                       className={solid}
-                      onClick={() => {
-                        setIncoming(request.userId);
-                        void send(`/api/join-requests/${request.id}/approve`, { method: "POST" });
-                      }}
+                      onClick={() => void send(`/api/join-requests/${request.id}/approve`, { method: "POST" })}
                     >
                       Approve
                     </button>
