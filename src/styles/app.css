@@ -1,0 +1,60 @@
+/* Hand Me Down app-level rules, loaded after BoardUI's globals. */
+
+:root {
+  --tabbar-h: 56px;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  background: var(--color-background-secondary-default);
+}
+
+body {
+  overflow-x: clip;
+  font-variant-numeric: tabular-nums;
+}
+
+/* iOS zooms into any focused field under 16px. Unlayered, so it beats utilities. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Horizontal shelves scroll without a visible bar. */
+.shelf {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.shelf::-webkit-scrollbar {
+  display: none;
+}
+
+/* Room under content for the fixed tab bar on phones. */
+.pb-tabbar {
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
+}
+@media (min-width: 64rem) {
+  .pb-tabbar {
+    padding-bottom: 0;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

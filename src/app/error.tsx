@@ -1,18 +1,22 @@
 "use client";
 
+import { Screen, ScreenHeader } from "@/components/app/screen";
+import { Button } from "@/components/base/buttons/button";
+import { SiteFooter } from "@/components/site-footer";
+
 export default function GlobalError({ error, reset }: { error: Error; reset: () => void }) {
   return (
-    <main className="mx-auto max-w-lg px-4 py-16">
-      <p className="micro text-accent">Something went wrong</p>
-      <h1 className="mt-2 font-serif text-4xl font-normal">The page could not be opened</h1>
-      <p className="mt-3 text-inksoft">{error.message || "Please try again."}</p>
-      <button
-        type="button"
-        onClick={() => reset()}
-        className="mt-6 inline-flex min-h-11 items-center border border-ink bg-ink px-5 text-[12px] font-medium uppercase tracking-[0.08em] text-sheet"
-      >
-        Retry
-      </button>
-    </main>
+    <div className="flex min-h-dvh flex-col">
+      <Screen className="flex-1">
+        <ScreenHeader title="Something went wrong" />
+        <div className="px-4 lg:px-0">
+          <p className="mt-2 text-headline-regular text-text-secondary">{error.message || "Please try again."}</p>
+          <Button onClick={() => reset()} className="mt-6 h-11 rounded-full px-5 text-headline-semibold">
+            Try again
+          </Button>
+        </div>
+      </Screen>
+      <SiteFooter />
+    </div>
   );
 }

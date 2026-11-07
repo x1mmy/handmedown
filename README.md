@@ -1,19 +1,21 @@
 # Hand Me Down
 
-A private family recipe book for the browser. Recipes live in household kitchens inside a shared book. The example book is named The Fam. Anyone with the link can view, upload, and edit. There is no sign-in.
+A private recipe book for one family, built for phones first. Recipes live in household kitchens inside one shared book, named The Fam by default. Anyone in the family with the link can view, add and edit. There is no sign-in.
 
 Owner: Zimraan Anjum / Stash Labs.
 
-## Run the demo
+## Run it locally
+
+1. Copy `.env.example` to `.env` and paste the Supabase secret key into `SUPABASE_SECRET_KEY`.
+2. Apply `supabase/migrations/20261107160000_hand_me_down.sql` to the Supabase project (see Migrations).
+3. Install and start:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and keep `HMD_DATA_ADAPTER=demo`. Open http://localhost:3000. You land in the example book: recipes, cook mode, album, kitchens, and the A5 preview. Nothing is written to Supabase.
-
-To start your own book, use **Start our own book** and submit the draft. Repeating that submit with the same draft key returns the same book. An empty title is stored as The Fam.
+Open http://localhost:3000. Checks:
 
 ```bash
 npm run lint
@@ -22,20 +24,33 @@ npm test
 npm run build
 ```
 
+## Pages
+
+| Path | What it is |
+| --- | --- |
+| `/` | All recipes, search, course and kitchen filters |
+| `/recipes/new` | Add a recipe |
+| `/recipes/:id` | Cook view: scaling, checklists, cook mode |
+| `/recipes/:id/edit` | Edit a recipe |
+| `/album` | Family photo albums |
+| `/kitchens` | Households in the family |
+| `/print` | A5 print preview and PDF |
+
+On phones the sections sit in a bottom tab bar with the add button in the middle. On wider screens they move into the header.
+
 ## Environment
 
-Copy `.env.example`.
+Copy `.env.example` to `.env`. `.env` is gitignored.
 
 | Name | Where it is read |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server. The project URL. |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server. The publishable client key. |
-| `SUPABASE_SECRET_KEY` | Server only. Private storage uploads and PDF bytes when the Supabase adapter is on. Never commit a real value. |
-| `HMD_DATA_ADAPTER` | `demo` only when set explicitly. Unset means `supabase`. |
+| `SUPABASE_SECRET_KEY` | Server only. Tables, private photo storage and PDF bytes. Never commit a real value. |
+| `HMD_BOOK_ID` | Server. Optional UUID of the one family book. Defaults to the seeded book. |
+| `HMD_PDF_EXPORT` | Server. `off` hides PDF export. Always off when `VERCEL=1`. |
 
-`HMD_DATA_ADAPTER=demo` uses the isolated file-backed adapter in `.data/`. The example book and its six photographs ship in `public/seed/`. Leaving the variable unset does not fall back to demo. Supabase mode throws if the URL, publishable key, or `SUPABASE_SECRET_KEY` is missing. The secret key stays on the server. The browser never writes tables or the private `media` bucket directly. Object paths are derived from the book and object ids. Completion functions are not executable by `anon` or `authenticated`.
-
-Set `HMD_DATA_ADAPTER=supabase` only after the migrations have been applied to a database you mean to use. They are not applied to the remote project.
+Supabase is the only data store. The app throws on start if the URL, publishable key or secret key is missing. The secret key stays on the server. The browser never writes tables or the private `media` bucket directly. Object paths are derived from the book and object ids. Completion functions are not executable by `anon` or `authenticated`.
 
 ## Migrations
 
@@ -51,13 +66,13 @@ supabase db reset
 psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f supabase/tests/rls.sql
 ```
 
-`supabase/tests/rls.sql` rolls back. It checks that an outsider sees no rows, a self-grant into `kitchen_members` fails, and a cross-book recipe insert fails the foreign key. The unit tests in `tests/demo-repository.test.ts` cover the same rules on the demo adapter, including replay, concurrent cooks, stale edits, the 6 second undo window, and the kitchen-delete guard. `npm test` does not need Docker.
+`supabase/tests/rls.sql` rolls back. It checks that an outsider sees no rows, a self-grant into `kitchen_members` fails, and a cross-book recipe insert fails the foreign key. `npm test` covers fractions, pagination, uploads, storage paths and the migration contract, and does not need Docker.
 
 ## What is real, and what is still pending
 
 Real in this repo:
 
-- Light-mode mobile-first UI for recipes, cook mode, editing, albums, kitchens, and A5 preview.
+- Light-mode, phone-first UI for recipes, cook mode, editing, albums, kitchens and the A5 preview.
 - Exact integer fraction scaling (`1 1/4 × 2 = 2 1/2`).
 - Session-local ingredient and step checks. Screen Wake Lock, with a plain instruction when the browser refuses it.
 - Soft delete with a 6 second undo, per-user favourites, and an idempotent cooked counter.
@@ -65,14 +80,12 @@ Real in this repo:
 - Upload checks reject non-images. Accepted files are re-encoded to JPEG and the EXIF segment is stripped.
 - Print preview and the PDF worker share one pagination model. The worker is Playwright with every network request aborted. Page size is A5 148×210mm, or 154×216mm when bleed is on.
 
-Pending until you opt in:
+Still pending:
 
-- The Supabase adapter is implemented and typechecked. It is the mode used when demo is not opted in. The remote database does not have these tables yet.
-- Private Storage uploads in that adapter need `SUPABASE_SECRET_KEY`. The demo stores new photos in process memory, so they disappear when the server restarts. Seed photos stay on disk.
+- The migration has not been applied to the remote Supabase project. Until it is, every page fails with a Supabase error.
 - PDF export needs Chromium: `npx playwright install chromium`. If the browser is missing, the preview still works and the export reports the failure.
 - The PDF uses built-in serif and sans stacks because the worker is not allowed to fetch fonts. Page breaks still come from the shared model, not from measuring a live layout.
-- There is no login. A demo cookie is not accepted as a real book session.
-- Local Supabase RLS (`supabase start`) was not run in this environment. That integration check is blocked until Docker and the Supabase CLI are available. Do not apply the migration remotely.
+- Local Supabase RLS (`supabase start`) was not run in this environment. That check needs Docker and the Supabase CLI.
 
 ## Deploy on Vercel
 
@@ -80,7 +93,6 @@ The hosted app is one shared book. The browser never talks to Postgres or Storag
 
 | Name | Value |
 | --- | --- |
-| `HMD_DATA_ADAPTER` | `supabase` |
 | `NEXT_PUBLIC_SUPABASE_URL` | The project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The publishable key. The server checks that it is set. The browser does not use it to write. |
 | `SUPABASE_SECRET_KEY` | Server only. Table and private Storage access. |

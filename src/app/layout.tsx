@@ -1,24 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Caveat, Inter, Newsreader } from "next/font/google";
+import { Caveat } from "next/font/google";
 
 import { MotionRoot } from "@/components/motion-root";
-import { MotionShell } from "@/components/motion";
-import { SiteFooter } from "@/components/site-footer";
+import { Toaster } from "@/components/base/toast/toast";
 
-import "./globals.css";
+import "@/styles/globals.css";
+import "@/styles/app.css";
 
-const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
-const serif = Newsreader({
-  subsets: ["latin"],
-  style: ["normal", "italic"],
-  variable: "--font-serif",
-  display: "swap",
-});
-const hand = Caveat({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-hand", display: "swap" });
+const hand = Caveat({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-caveat", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Hand Me Down",
-  description: "A private family recipe book, kept by kitchen.",
+  description: "Our family recipe book.",
+  appleWebApp: { capable: true, title: "Hand Me Down", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
@@ -27,20 +21,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
   colorScheme: "light",
+  themeColor: "#f7f7f7",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${serif.variable} ${hand.variable}`}>
-      <body className="flex min-h-dvh flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-sans text-[15px] leading-normal text-ink antialiased">
-        <MotionRoot>
-          <div className="flex min-h-dvh flex-col">
-            <div className="flex-1">
-              <MotionShell>{children}</MotionShell>
-            </div>
-            <SiteFooter />
-          </div>
-        </MotionRoot>
+    <html lang="en" className={hand.variable}>
+      <body className="min-h-dvh bg-background-secondary-default font-sans text-text-primary antialiased">
+        <MotionRoot>{children}</MotionRoot>
+        <Toaster position="top-center" />
       </body>
     </html>
   );

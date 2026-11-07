@@ -1,15 +1,12 @@
 import "server-only";
 
-import { assertSupabaseConfigured, dataAdapter } from "@/lib/config";
-import { DemoRepository, getDemoRepository } from "@/lib/repository/demo";
+import { assertSupabaseConfigured } from "@/lib/config";
 import { SupabaseRepository } from "@/lib/repository/supabase";
 
-export type AppRepository = DemoRepository | SupabaseRepository;
+export type AppRepository = SupabaseRepository;
 
+/** Supabase is the only store. Missing config fails loudly. */
 export function getRepository(): AppRepository {
-  if (dataAdapter() === "demo") return getDemoRepository();
   assertSupabaseConfigured();
   return new SupabaseRepository();
 }
-
-export { DemoRepository };

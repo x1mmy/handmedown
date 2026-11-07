@@ -3,37 +3,122 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  RiAddLine,
+  RiArrowLeftSLine,
+  RiBookOpenFill,
+  RiBookOpenLine,
+  RiHome5Fill,
+  RiHome5Line,
+  RiImage2Fill,
+  RiImage2Line,
+  RiPrinterFill,
+  RiPrinterLine,
+} from "@remixicon/react";
 
-import type { BookDetail } from "@/lib/types";
+import { ButtonLink } from "@/components/base/buttons/button";
+import { cx } from "@/utils/cx";
 
 const NAV = [
-  { suffix: "", label: "Recipes" },
-  { suffix: "/album", label: "Album" },
-  { suffix: "/kitchens", label: "Kitchens" },
-  { suffix: "/print", label: "Print" },
+  { href: "/", label: "Recipes", icon: RiBookOpenLine, active: RiBookOpenFill },
+  { href: "/album", label: "Album", icon: RiImage2Line, active: RiImage2Fill },
+  { href: "/kitchens", label: "Kitchens", icon: RiHome5Line, active: RiHome5Fill },
+  { href: "/print", label: "Print", icon: RiPrinterLine, active: RiPrinterFill },
 ] as const;
 
-export function BookNav({ bookId }: { bookId: string }) {
+function isActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/" || pathname.startsWith("/recipes");
+  return pathname.startsWith(href);
+}
+
+/** Recipe, edit and new screens are pushed screens: no tab bar, a back button instead. */
+function isPushed(pathname: string) {
+  return pathname.startsWith("/recipes/");
+}
+
+export function TabBar() {
+  const pathname = usePathname();
+  if (isPushed(pathname)) return null;
+  return (
+    <nav
+      aria-label="Sections"
+      className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-separator-border bg-background-primary-default/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
+    >
+      <div className="mx-auto grid h-(--tabbar-h) max-w-md grid-cols-4">
+        {NAV.map((item) => {
+          const active = isActive(pathname, item.href);
+          const Icon = active ? item.active : item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={cx(
+                "flex flex-col items-center justify-center gap-0.5 text-caption-2-medium outline-none transition-colors active:opacity-60",
+                active ? "text-accent-600" : "text-text-secondary",
+              )}
+            >
+              <Icon className="size-6" aria-hidden />
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/** Desktop: the same sections in a slim top bar. */
+export function TopNav({ title }: { title: string }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Primary sections" className="flex flex-wrap gap-x-4 gap-y-1 py-2 desk:gap-x-6">
-      {NAV.map((item) => {
-        const href = `/books/${bookId}${item.suffix}`;
-        const active = item.suffix === "" ? pathname === href : pathname.startsWith(href);
-        return (
-          <Link
-            key={item.label}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={`inline-flex min-h-11 min-w-11 items-center justify-center text-[12px] uppercase tracking-[0.08em] ${
-              active ? "border-b-[1.5px] border-accent font-semibold text-ink" : "text-inkmuted"
-            }`}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <header className="no-print fixed inset-x-0 top-0 z-40 hidden h-16 border-b border-separator-border bg-background-primary-default/85 backdrop-blur-xl lg:block">
+      <div className="mx-auto flex h-full max-w-5xl items-center gap-6 px-8">
+        <Link href="/" className="truncate text-headline-semibold text-text-primary">
+          {title}
+        </Link>
+        <nav aria-label="Sections" className="flex flex-1 items-center justify-center gap-1">
+          {NAV.map((item) => {
+            const active = isActive(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cx(
+                  "rounded-full px-4 py-2 text-body-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+                  active ? "bg-accent-50 text-accent-700" : "text-text-secondary hover:bg-background-secondary-default hover:text-text-primary",
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <ButtonLink href="/recipes/new" leadingIcon={RiAddLine} className="rounded-full px-4">
+          New recipe
+        </ButtonLink>
+      </div>
+    </header>
+  );
+}
+
+/** Floating round back button for pushed screens. Goes back when there is history, home otherwise. */
+export function BackButton({ fallback = "/", className, onImage = false }: { fallback?: string; className?: string; onImage?: boolean }) {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      aria-label="Back"
+      onClick={() => (window.history.length > 1 ? router.back() : router.push(fallback))}
+      className={cx(
+        "flex size-10 items-center justify-center rounded-full outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        onImage ? "bg-background-primary-default/85 text-foreground-icon-primary shadow-sm backdrop-blur-md" : "bg-background-primary-default text-foreground-icon-primary shadow-card",
+        className,
+      )}
+    >
+      <RiArrowLeftSLine className="size-6 rtl:-scale-x-100" aria-hidden />
+    </button>
   );
 }
 
@@ -42,7 +127,7 @@ export function TitleInput({ bookId, title }: { bookId: string; title: string })
     <InlineName
       value={title}
       label="Book title"
-      displayClass="font-serif text-[26px] leading-none tracking-[-0.02em] desk:text-[34px]"
+      displayClass="text-display-4-bold text-text-primary"
       save={async (next) => {
         const response = await fetch(`/api/books/${bookId}`, {
           method: "PATCH",
@@ -58,6 +143,7 @@ export function TitleInput({ bookId, title }: { bookId: string; title: string })
   );
 }
 
+/** Tap the name to rename it in place. Enter saves, Escape cancels. */
 export function InlineName({
   value,
   label,
@@ -72,7 +158,6 @@ export function InlineName({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,24 +173,30 @@ export function InlineName({
     }
     try {
       await save(next);
-      setNotice("Saved");
       setError(null);
       setEditing(false);
       router.refresh();
     } catch (caught) {
-      setNotice(null);
       setError(caught instanceof Error ? caught.message : "Could not save");
     }
   }
 
   if (!editing) {
     return (
-      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-2">
-        <button type="button" className={`min-h-11 min-w-0 max-w-full truncate text-left ${displayClass}`} onClick={() => { setNotice(null); setEditing(true); }}>
+      <span className="block min-w-0">
+        <button
+          type="button"
+          title={`Rename ${label.toLowerCase()}`}
+          className={cx("block max-w-full truncate text-start outline-none focus-visible:underline", displayClass)}
+          onClick={() => setEditing(true)}
+        >
           {value}
         </button>
-        {notice ? <span role="status" className="text-sm font-sans">Saved</span> : null}
-        {error ? <span role="alert" className="text-sm font-sans text-accent">{error}</span> : null}
+        {error ? (
+          <span role="alert" className="block text-body-regular text-text-error-primary">
+            {error}
+          </span>
+        ) : null}
       </span>
     );
   }
@@ -116,7 +207,7 @@ export function InlineName({
       aria-label={label}
       maxLength={40}
       value={draft}
-      className={`min-h-11 w-full min-w-[12rem] max-w-full border-b border-ink bg-transparent py-2 text-base leading-normal focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent ${displayClass}`}
+      className={cx("w-full min-w-0 rounded-lg bg-background-primary-default px-1 outline-none ring-2 ring-border-focus-ring", displayClass)}
       onChange={(event) => setDraft(event.target.value.slice(0, 40))}
       onBlur={() => void commit()}
       onKeyDown={(event) => {
@@ -131,36 +222,5 @@ export function InlineName({
         }
       }}
     />
-  );
-}
-
-export function KitchenSwitcher({
-  book,
-  kitchenId,
-}: {
-  book: BookDetail;
-  kitchenId?: string;
-}) {
-  return (
-    <form action={`/books/${book.id}`} className="inline-flex min-h-11 items-center gap-2 border border-rule bg-sheet px-2.5">
-      <label className="micro" htmlFor="kitchen-switch">
-        Cooking as
-      </label>
-      <select
-        id="kitchen-switch"
-        name="kitchen"
-        aria-label="Cooking as kitchen"
-        defaultValue={kitchenId ?? ""}
-        className="min-h-11 max-w-[11rem] bg-transparent text-base font-medium"
-        onChange={(event) => event.currentTarget.form?.requestSubmit()}
-      >
-        <option value="">All kitchens</option>
-        {book.kitchens.map((kitchen) => (
-          <option key={kitchen.id} value={kitchen.id}>
-            {kitchen.name}
-          </option>
-        ))}
-      </select>
-    </form>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { contentDispositionAttachment } from "@/lib/content-disposition";
-import { assertSupabaseConfigured, dataAdapter } from "@/lib/config";
+import { assertSupabaseConfigured } from "@/lib/config";
 import { AppError } from "@/lib/errors";
 import { renderPrintHtml } from "@/lib/print/render-html";
 import { paginate } from "@/lib/print/paginate";
@@ -31,30 +31,21 @@ describe("storage paths", () => {
   });
 });
 
-describe("adapter configuration", () => {
-  it("fails closed unless demo is explicit", () => {
-    const previous = process.env.HMD_DATA_ADAPTER;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    const secret = process.env.SUPABASE_SECRET_KEY;
-    delete process.env.HMD_DATA_ADAPTER;
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    delete process.env.SUPABASE_SECRET_KEY;
-    expect(dataAdapter()).toBe("supabase");
-    expect(() => assertSupabaseConfigured()).toThrow(/no demo fallback/);
-    process.env.HMD_DATA_ADAPTER = "nope";
-    expect(() => dataAdapter()).toThrow(AppError);
-    process.env.HMD_DATA_ADAPTER = "demo";
-    expect(dataAdapter()).toBe("demo");
-    if (previous === undefined) delete process.env.HMD_DATA_ADAPTER;
-    else process.env.HMD_DATA_ADAPTER = previous;
-    if (url === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    else process.env.NEXT_PUBLIC_SUPABASE_URL = url;
-    if (key === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = key;
-    if (secret === undefined) delete process.env.SUPABASE_SECRET_KEY;
-    else process.env.SUPABASE_SECRET_KEY = secret;
+describe("supabase configuration", () => {
+  it("fails closed when any key is missing", () => {
+    const names = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY"] as const;
+    const saved = names.map((name) => process.env[name]);
+    for (const name of names) process.env[name] = "set";
+    expect(assertSupabaseConfigured().secretKey).toBe("set");
+    for (const missing of names) {
+      for (const name of names) process.env[name] = "set";
+      delete process.env[missing];
+      expect(() => assertSupabaseConfigured()).toThrow(AppError);
+    }
+    names.forEach((name, index) => {
+      if (saved[index] === undefined) delete process.env[name];
+      else process.env[name] = saved[index];
+    });
   });
 });
 

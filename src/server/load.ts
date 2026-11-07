@@ -3,6 +3,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 
 import { getPrincipal } from "@/lib/auth/principal";
+import { sharedBookId } from "@/lib/book-scope";
 import { AppError } from "@/lib/errors";
 import { getRepository, type AppRepository } from "@/lib/repository";
 import type { BookDetail, Principal } from "@/lib/types";
@@ -11,7 +12,8 @@ export async function loadContext(): Promise<{ principal: Principal; repo: AppRe
   return { principal: await getPrincipal(), repo: getRepository() };
 }
 
-export async function loadBook(bookId: string): Promise<{
+/** The app holds one family book. */
+export async function loadBook(bookId: string = sharedBookId()): Promise<{
   principal: Principal;
   repo: AppRepository;
   book: BookDetail;

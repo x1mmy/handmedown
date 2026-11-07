@@ -1,12 +1,20 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { RiAddLine, RiCamera3Line, RiFolderAddLine } from "@remixicon/react";
 
-import { PushRow, tween } from "@/components/motion";
-
+import { BIG, Screen, ScreenHeader } from "@/components/app/screen";
+import { Button } from "@/components/base/buttons/button";
+import { Drawer, DrawerBody, DrawerHeader } from "@/components/base/drawer/drawer";
+import { Input } from "@/components/base/input/input";
+import { Select, SelectItem } from "@/components/base/select/select";
+import { toast } from "@/components/base/toast/toast";
 import type { AlbumView } from "@/lib/types";
+import { cx } from "@/utils/cx";
+
+type Photo = AlbumView["photos"][number] & { album: string };
 
 export function AlbumBrowser({
   bookId,
@@ -18,195 +26,260 @@ export function AlbumBrowser({
   kitchens: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const [albumId, setAlbumId] = useState(albums[0]?.id ?? "all");
-  const [name, setName] = useState("");
+  const reduce = useReducedMotion();
+  const [albumId, setAlbumId] = useState("all");
+  const [addOpen, setAddOpen] = useState(false);
+  const [open, setOpen] = useState<Photo | null>(null);
+  const [freshId, setFreshId] = useState<string | null>(null);
+
+  const all: Photo[] = albums.flatMap((album) => album.photos.map((photo) => ({ ...photo, album: album.name })));
+  const visible = albumId === "all" ? all : all.filter((photo) => albums.find((album) => album.id === albumId)?.photos.some((item) => item.id === photo.id));
+
+  return (
+    <Screen>
+      <ScreenHeader
+        title="Album"
+        action={<Button iconOnly leadingIcon={RiAddLine} aria-label="Add a photo" className="size-11 rounded-full" onClick={() => setAddOpen(true)} />}
+      />
+
+      {albums.length > 0 ? (
+        <div className="shelf mt-2 flex gap-2 overflow-x-auto px-4 lg:px-0">
+          <Pill active={albumId === "all"} onClick={() => setAlbumId("all")}>
+            All <span className="opacity-60">{all.length}</span>
+          </Pill>
+          {albums.map((album) => (
+            <Pill key={album.id} active={albumId === album.id} onClick={() => setAlbumId(album.id)}>
+              {album.name}
+            </Pill>
+          ))}
+        </div>
+      ) : null}
+
+      {visible.length === 0 ? (
+        <div className="mx-4 mt-6 rounded-3xl bg-background-primary-default px-6 py-12 text-center shadow-card lg:mx-0">
+          <p className="text-title-3-semibold text-text-primary">No photos yet</p>
+          <p className="mt-1 text-body-regular text-text-secondary">Snap the next family dinner and add it here.</p>
+          <Button leadingIcon={RiCamera3Line} onClick={() => setAddOpen(true)} className="mt-5 h-11 rounded-full px-5">
+            Add a photo
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-4 grid grid-cols-3 gap-0.5 sm:gap-1 lg:grid-cols-5 lg:gap-2">
+          {visible.map((photo, index) => (
+            <motion.button
+              key={photo.id}
+              type="button"
+              aria-label={photo.caption || "Family photo"}
+              onClick={() => setOpen(photo)}
+              className="relative aspect-square overflow-hidden bg-background-tertiary-default outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring lg:rounded-xl"
+              initial={reduce ? false : photo.id === freshId ? { opacity: 0, scale: 0.85 } : { opacity: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.35, delay: photo.id === freshId ? 0 : Math.min(index, 12) * 0.02, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <img src={photo.url} alt="" loading="lazy" className="size-full object-cover transition-transform duration-300 active:scale-95" />
+            </motion.button>
+          ))}
+        </div>
+      )}
+
+      <Drawer placement="bottom" isOpen={open !== null} onOpenChange={(value) => !value && setOpen(null)}>
+        {open ? (
+          <>
+            <DrawerHeader title={open.album} description={open.meta} />
+            <DrawerBody>
+              <img src={open.url} alt={open.caption || "Family photo"} className="max-h-[55dvh] w-full rounded-2xl object-contain" />
+              {open.caption ? <p className="mt-3 pb-[env(safe-area-inset-bottom)] font-hand text-title-1-medium text-accent-800">{open.caption}</p> : null}
+            </DrawerBody>
+          </>
+        ) : null}
+      </Drawer>
+
+      <AddPhotoSheet
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        bookId={bookId}
+        albums={albums}
+        kitchens={kitchens}
+        defaultAlbumId={albumId === "all" ? albums[0]?.id : albumId}
+        onAdded={(photoId, targetAlbum) => {
+          setFreshId(photoId);
+          setAlbumId(targetAlbum);
+          setAddOpen(false);
+          toast.success("Photo added");
+          router.refresh();
+        }}
+        onAlbumCreated={(id) => {
+          setAlbumId(id);
+          router.refresh();
+        }}
+      />
+    </Screen>
+  );
+}
+
+function AddPhotoSheet({
+  open,
+  onOpenChange,
+  bookId,
+  albums,
+  kitchens,
+  defaultAlbumId,
+  onAdded,
+  onAlbumCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  bookId: string;
+  albums: AlbumView[];
+  kitchens: { id: string; name: string }[];
+  defaultAlbumId?: string;
+  onAdded: (photoId: string, albumId: string) => void;
+  onAlbumCreated: (albumId: string) => void;
+}) {
+  const [target, setTarget] = useState(defaultAlbumId ?? "");
   const [caption, setCaption] = useState("");
   const [kitchenId, setKitchenId] = useState(kitchens[0]?.id ?? "");
+  const [newAlbum, setNewAlbum] = useState("");
+  const [naming, setNaming] = useState(albums.length === 0);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [freshId, setFreshId] = useState<string | null>(null);
-  const reduce = useReducedMotion();
-  const visible = albumId === "all" ? albums.flatMap((album) => album.photos.map((photo) => ({ ...photo, album: album.name }))) : albums.find((album) => album.id === albumId)?.photos.map((photo) => ({ ...photo, album: albums.find((item) => item.id === albumId)?.name ?? "" })) ?? [];
-  const count = albums.reduce((sum, album) => sum + album.photos.length, 0);
+  const albumTarget = target || defaultAlbumId || albums[0]?.id || "";
 
-  async function createAlbum() {
+  async function createAlbum(): Promise<string | null> {
     setError(null);
     try {
       const response = await fetch(`/api/books/${bookId}/albums`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name: newAlbum }),
       });
       const body = (await response.json()) as { message?: string; id?: string };
-      if (!response.ok) {
+      if (!response.ok || !body.id) {
         setError(body.message ?? "Could not create the album");
-        return;
+        return null;
       }
-      setName("");
-      if (body.id) setAlbumId(body.id);
-      router.refresh();
+      setNewAlbum("");
+      setNaming(false);
+      setTarget(body.id);
+      onAlbumCreated(body.id);
+      return body.id;
     } catch {
-      setError("The album was not created. Check the connection and retry.");
+      setError("The album was not created. Check the connection and try again.");
+      return null;
     }
   }
 
   async function upload(file: File) {
     setError(null);
     setPendingFile(file);
-    const target = albumId === "all" ? albums[0]?.id : albumId;
-    if (!target) {
-      setStatus("Failed");
-      setError("Name an album before adding photos");
+    let destination = albumTarget;
+    if (naming && newAlbum.trim()) destination = (await createAlbum()) ?? "";
+    if (!destination) {
+      setError("Name an album first.");
       return;
     }
     const form = new FormData();
     form.set("file", file);
-    form.set("albumId", target);
+    form.set("albumId", destination);
     form.set("caption", caption);
     if (kitchenId) form.set("kitchenId", kitchenId);
-    setStatus("Uploading…");
+    setBusy(true);
     try {
       const response = await fetch(`/api/books/${bookId}/media`, { method: "POST", body: form });
       const body = (await response.json().catch(() => ({}))) as { message?: string; photoId?: string };
       if (!response.ok) {
-        setStatus("Failed");
-        setError(body.message ?? "Unsafe upload rejected");
+        setError(body.message ?? "That file could not be used. Try a JPEG, PNG or WebP photo.");
         return;
       }
-      if (body.photoId) setFreshId(body.photoId);
       setCaption("");
       setPendingFile(null);
-      setStatus(null);
-      router.refresh();
+      onAdded(body.photoId ?? "", destination);
     } catch {
-      setStatus("Failed");
-      setError("The photograph was not saved. Check the connection and retry.");
+      setError("The photo was not saved. Check the connection and try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule pb-4">
-        <div className="flex flex-wrap gap-x-4">
-          <button type="button" className={tab(albumId === "all")} onClick={() => setAlbumId("all")}>
-            All photos ({count})
-          </button>
-          {albums.map((album) => (
-            <button key={album.id} type="button" className={tab(albumId === album.id)} onClick={() => setAlbumId(album.id)}>
-              {album.name}
-            </button>
-          ))}
-        </div>
-        <label className="inline-flex min-h-11 cursor-pointer items-center border border-ink px-4 text-[12px] font-medium uppercase tracking-[0.08em]">
-          Add photos
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void upload(file);
-            }}
-          />
-        </label>
-      </div>
-
-      <div className="mt-4 grid gap-3 desk:grid-cols-[1fr_1fr_auto] desk:items-end">
-        <label className="block">
-          <span className="micro">New album name</span>
-          <input aria-label="New album name" value={name} onChange={(event) => setName(event.target.value)} className="min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent" />
-        </label>
-        <label className="block">
-          <span className="micro">Caption for the next photo</span>
-          <input aria-label="Caption for the next photo" value={caption} onChange={(event) => setCaption(event.target.value)} className="min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent" />
-        </label>
-        <div className="flex gap-2">
-          {kitchens.length > 0 ? (
-            <select aria-label="Photo kitchen" value={kitchenId} onChange={(event) => setKitchenId(event.target.value)} className="min-h-11 min-w-0 max-w-full border border-rule bg-sheet px-2 text-base">
+    <Drawer placement="bottom" isOpen={open} onOpenChange={onOpenChange}>
+      <DrawerHeader title="Add a photo" description="It goes straight into the family album." />
+      <DrawerBody>
+        <div className="grid gap-4 pb-[env(safe-area-inset-bottom)]">
+          {naming ? (
+            <Input label="New album" placeholder="Eid 2026" value={newAlbum} onChange={setNewAlbum} fieldClassName="h-11" />
+          ) : (
+            <div className="flex items-end gap-2">
+              <Select label="Album" value={albumTarget} onChange={(key) => key && setTarget(String(key))} className="flex-1" triggerClassName="h-11">
+                {albums.map((album) => (
+                  <SelectItem key={album.id} id={album.id}>
+                    {album.name}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Button variant="secondary" iconOnly leadingIcon={RiFolderAddLine} aria-label="New album" className="size-11 rounded-xl" onClick={() => setNaming(true)} />
+            </div>
+          )}
+          <Input label="Caption" placeholder="Nan's Friday salmon" value={caption} onChange={setCaption} fieldClassName="h-11" />
+          {kitchens.length > 1 ? (
+            <Select label="Kitchen" value={kitchenId} onChange={(key) => key && setKitchenId(String(key))} triggerClassName="h-11">
               {kitchens.map((kitchen) => (
-                <option key={kitchen.id} value={kitchen.id}>
+                <SelectItem key={kitchen.id} id={kitchen.id}>
                   {kitchen.name}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+            </Select>
           ) : null}
-          <button type="button" onClick={() => void createAlbum()} className="inline-flex min-h-11 items-center border border-ink px-4 text-[12px] uppercase tracking-[0.08em]">
-            Name album
-          </button>
-        </div>
-      </div>
-      {status && status !== "Failed" ? <p className="mt-3 text-sm" role="status">{status}</p> : null}
-      {error ? (
-        <p role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm text-accent">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="inline-flex min-h-11 items-center border border-ink px-4 text-[12px] uppercase tracking-[0.08em] text-ink"
-            onClick={() => void (pendingFile ? upload(pendingFile) : createAlbum())}
+          {error ? (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-2xl bg-background-tertiary-error px-4 py-3 text-body-medium text-text-error-primary">
+              <span>{error}</span>
+              {pendingFile ? (
+                <Button variant="secondary" size="small" onClick={() => void upload(pendingFile)}>
+                  Retry
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <label
+            className={cx(
+              BIG,
+              "flex cursor-pointer items-center justify-center gap-2 bg-button-primary text-text-white shadow-xs focus-within:ring-2 focus-within:ring-border-focus-ring",
+              busy && "pointer-events-none opacity-60",
+            )}
           >
-            Retry
-          </button>
-        </p>
-      ) : null}
-
-      {visible.length === 0 ? (
-        <p className="py-10 text-inksoft">This album is waiting for its first photograph.</p>
-      ) : (
-        <div className="mt-6 grid grid-cols-2 gap-4 desk:grid-cols-4 desk:gap-7">
-          {visible.map((photo) => {
-            const fresh = photo.id === freshId;
-            return (
-              <PushRow key={photo.id} fresh={fresh}>
-                <motion.figure
-                  className="relative border border-[#dfd9ce] bg-sheet px-3 pb-6 pt-3"
-                  initial={fresh && !reduce ? { opacity: 0, rotate: 3 } : false}
-                  animate={{ opacity: 1, rotate: 1 }}
-                  transition={reduce ? { duration: 0 } : tween(0.2)}
-                >
-                  <span className="absolute -top-2 left-1/2 h-4 w-14 -translate-x-1/2 bg-[rgba(230,219,194,0.72)]" />
-                  <img src={photo.url} alt={photo.caption || "Family photograph"} className="aspect-square w-full object-cover" />
-                  <TypedCaption text={photo.caption} play={fresh} />
-                  <p className="micro mt-1">{photo.meta}</p>
-                </motion.figure>
-              </PushRow>
-            );
-          })}
+            <RiCamera3Line className="size-5" aria-hidden />
+            {busy ? "Uploading" : "Choose a photo"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void upload(file);
+              }}
+            />
+          </label>
         </div>
-      )}
-    </div>
+      </DrawerBody>
+    </Drawer>
   );
 }
 
-function TypedCaption({ text, play }: { text: string; play: boolean }) {
-  const reduce = useReducedMotion();
-  const [count, setCount] = useState(play && !reduce ? 0 : text.length);
-
-  useEffect(() => {
-    if (!play || reduce) {
-      setCount(text.length);
-      return;
-    }
-    setCount(0);
-    const step = Math.max(16, Math.floor(280 / Math.max(text.length, 1)));
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index += 1;
-      setCount(index);
-      if (index >= text.length) window.clearInterval(timer);
-    }, step);
-    return () => window.clearInterval(timer);
-  }, [play, reduce, text]);
-
+function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <figcaption className="mt-3 min-h-[1.6em] font-hand text-xl leading-snug text-handink" aria-label={text}>
-      {text.slice(0, count)}
-    </figcaption>
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cx(
+        "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-body-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        active ? "bg-accent-50 text-accent-700" : "bg-background-primary-default text-text-secondary shadow-card hover:text-text-primary",
+      )}
+    >
+      {children}
+    </button>
   );
-}
-
-function tab(active: boolean) {
-  return `inline-flex min-h-11 min-w-11 items-center justify-center text-[12px] uppercase tracking-[0.08em] ${
-    active ? "font-semibold text-ink underline decoration-1 underline-offset-[6px]" : "text-inkmuted"
-  }`;
 }

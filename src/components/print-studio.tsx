@@ -1,55 +1,72 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { RiArrowLeftSLine, RiArrowRightSLine, RiDownload2Line, RiPrinterLine } from "@remixicon/react";
 
+import { BIG } from "@/components/app/screen";
+import { Button } from "@/components/base/buttons/button";
+import { IconButton } from "@/components/base/buttons/icon-button";
+import { Switch } from "@/components/base/switch/switch";
 import { tween } from "@/components/motion";
 import { paginate, type PrintPage } from "@/lib/print/paginate";
 import { COVER_CLOTHS, type CoverId, type ExportSnapshot } from "@/lib/types";
+import { cx } from "@/utils/cx";
 
 export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: string; snapshot: ExportSnapshot; pdfEnabled?: boolean }) {
   const [clothId, setClothId] = useState<CoverId>(snapshot.clothId);
   const [bleed, setBleed] = useState(snapshot.bleed);
   const [spread, setSpread] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const reduce = useReducedMotion();
   const opened = useRef(false);
-  const previousSpread = useRef(0);
-  const direction = spread >= previousSpread.current ? 1 : -1;
-  previousSpread.current = spread;
   const pages = useMemo(() => paginate({ ...snapshot, clothId, bleed }), [snapshot, clothId, bleed]);
+  // Flip animation only after the first paint, so server and client markup match.
+  useEffect(() => {
+    opened.current = true;
+  }, []);
   const flip = opened.current;
-  if (!opened.current) opened.current = true;
+  const spreads = Math.ceil(pages.length / 2);
   const left = pages[spread * 2];
   const right = pages[spread * 2 + 1];
-  const spreads = Math.ceil(pages.length / 2);
+  const firstShown = spread * 2 + 1;
+  const lastShown = Math.min(pages.length, spread * 2 + 2);
+
+  function go(to: number) {
+    if (to < 0 || to > spreads - 1) return;
+    setDirection(to >= spread ? 1 : -1);
+    setSpread(to);
+  }
 
   async function exportPdf() {
     setBusy(true);
     setMessage(null);
-    const response = await fetch(`/api/books/${bookId}/exports`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clothId, bleed }),
-    });
-    const body = (await response.json()) as { jobId?: string; message?: string; error?: string; status?: string };
-    if (!response.ok || !body.jobId || body.status === "failed") {
-      setMessage(body.error || body.message || "The PDF worker could not render this book.");
+    try {
+      const response = await fetch(`/api/books/${bookId}/exports`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clothId, bleed }),
+      });
+      const body = (await response.json()) as { jobId?: string; message?: string; error?: string; status?: string };
+      if (!response.ok || !body.jobId || body.status === "failed") {
+        setMessage(body.error || body.message || "The PDF worker could not render this book.");
+        return;
+      }
+      window.location.href = `/api/exports/${body.jobId}`;
+    } catch {
+      setMessage("The PDF was not made. Check the connection and try again.");
+    } finally {
       setBusy(false);
-      return;
     }
-    window.location.href = `/api/exports/${body.jobId}`;
-    setBusy(false);
   }
 
   return (
-    <div className="grid min-w-0 items-start gap-8 desk:grid-cols-[290px_1fr]">
-      <aside className="border border-rule bg-sheet p-5">
-        <p className="micro">A5 bound book export</p>
-        <h3 className="mt-1 font-serif text-2xl font-normal">Print configuration</h3>
-        <p className="micro mt-4">Bookcloth linen cover</p>
-        <div className="mt-2 flex flex-wrap gap-2.5">
+    <div className="mt-6 grid items-start gap-6 px-4 lg:grid-cols-[320px_1fr] lg:px-0">
+      <aside className="no-print rounded-3xl bg-background-primary-default p-4 shadow-card lg:sticky lg:top-24">
+        <p className="text-headline-semibold text-text-primary">Cover</p>
+        <div className="mt-3 flex flex-wrap gap-3">
           {COVER_CLOTHS.map((cloth) => (
             <button
               key={cloth.id}
@@ -58,53 +75,84 @@ export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: s
               aria-label={cloth.name}
               aria-pressed={clothId === cloth.id}
               onClick={() => setClothId(cloth.id)}
-              className={`h-11 w-11 border border-ink ${clothId === cloth.id ? "outline outline-2 outline-offset-2 outline-ink" : ""}`}
+              className={cx(
+                "size-11 rounded-full shadow-card outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+                clothId === cloth.id && "ring-2 ring-accent-500 ring-offset-2 ring-offset-background-primary-default",
+              )}
               style={{ background: cloth.background }}
             />
           ))}
         </div>
-        <button type="button" className="mt-5 flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em]" onClick={() => setBleed((value) => !value)}>
-          {bleed ? "Hide" : "Show"} 3mm bleed guides
-        </button>
-        <p className="micro my-4">
-          {pages.length} pages · {snapshot.recipes.length} recipes · A5 {bleed ? "154×216mm" : "148×210mm"}
-        </p>
-        {pdfEnabled ? (
-          <button type="button" disabled={busy} onClick={() => void exportPdf()} className="flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink bg-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em] text-sheet disabled:opacity-50">
-            {busy ? "Rendering" : "Export print-ready A5 PDF"}
-          </button>
-        ) : (
-          <>
-            <p className="text-sm text-inksoft">PDF export needs Chromium, which this host does not run. Use your browser&apos;s print dialog on this preview.</p>
-            <button type="button" onClick={() => window.print()} className="mt-3 flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink bg-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em] text-sheet">
-              Print this preview
-            </button>
-          </>
-        )}
-        {message ? <p className="mt-3 text-sm text-accent">{message}</p> : null}
-        <div className="mt-4 flex w-full min-w-0 gap-2">
-          <button type="button" className="min-h-11 flex-1 border border-rule" onClick={() => setSpread((value) => Math.max(0, value - 1))}>
-            Previous
-          </button>
-          <button type="button" className="min-h-11 flex-1 border border-rule" onClick={() => setSpread((value) => Math.min(spreads - 1, value + 1))}>
-            Next
-          </button>
+
+        <div className="mt-5 flex min-h-11 items-center justify-between gap-3 border-t border-separator-border pt-4">
+          <Switch isSelected={bleed} onChange={setBleed} className="w-full flex-row-reverse justify-between">
+            <span className="text-body-medium text-text-primary">Show 3mm bleed guides</span>
+          </Switch>
         </div>
+
+        <p className="mt-3 text-body-regular text-text-secondary">
+          {pages.length} pages, {snapshot.recipes.length} recipes, A5 {bleed ? "154 × 216mm" : "148 × 210mm"}
+        </p>
+
+        <div className="mt-5">
+          {pdfEnabled ? (
+            <Button leadingIcon={RiDownload2Line} disabled={busy} onClick={() => void exportPdf()} className={cx(BIG, "w-full")}>
+              {busy ? "Rendering" : "Download A5 PDF"}
+            </Button>
+          ) : (
+            <>
+              <Button leadingIcon={RiPrinterLine} onClick={() => window.print()} className={cx(BIG, "w-full")}>
+                Print this preview
+              </Button>
+              <p className="mt-2 text-caption-1-medium text-text-secondary">PDF download needs Chromium, which this host does not run.</p>
+            </>
+          )}
+        </div>
+        {message ? (
+          <p role="alert" className="mt-3 rounded-2xl bg-background-tertiary-error px-4 py-3 text-body-medium text-text-error-primary">
+            {message}
+          </p>
+        ) : null}
       </aside>
-      <div className="min-w-0" style={{ perspective: "1200px" }}>
-        <motion.div
-          key={spread}
-          className={`grid min-w-0 bg-sheet ${bleed ? "outline outline-1 outline-offset-2 outline-dashed outline-accent" : ""} desk:grid-cols-2 ${bleed ? "" : "border border-[#cfc8ba]"}`}
-          initial={!reduce && flip ? { opacity: 0, rotateY: direction * 12 } : false}
-          animate={{ opacity: 1, rotateY: 0 }}
-          transition={reduce ? { duration: 0 } : tween(0.26)}
-        >
-          {left ? <PageView page={left} /> : null}
-          {right ? <PageView page={right} /> : <div className="hidden desk:block" />}
-        </motion.div>
+
+      <div className="min-w-0">
+        <div className="no-print mb-3 flex items-center justify-between gap-3">
+          <IconButton icon={RiArrowLeftSLine} aria-label="Previous pages" disabled={spread === 0} onClick={() => go(spread - 1)} className="size-11 rounded-full" />
+          <p className="text-body-medium text-text-secondary" aria-live="polite">
+            Pages {firstShown === lastShown ? firstShown : `${firstShown}-${lastShown}`} of {pages.length}
+          </p>
+          <IconButton
+            icon={RiArrowRightSLine}
+            aria-label="Next pages"
+            disabled={spread >= spreads - 1}
+            onClick={() => go(spread + 1)}
+            className="size-11 rounded-full"
+          />
+        </div>
+        <div style={{ perspective: "1200px" }}>
+          <motion.div
+            key={spread}
+            className={cx(
+              "grid min-w-0 overflow-hidden rounded-lg bg-background-primary-default shadow-lg lg:grid-cols-2",
+              bleed && "outline-1 outline-offset-4 outline-accent-500 outline-dashed",
+            )}
+            initial={!reduce && flip ? { opacity: 0, rotateY: direction * 10 } : false}
+            animate={{ opacity: 1, rotateY: 0 }}
+            transition={reduce ? { duration: 0 } : tween(0.3)}
+          >
+            {left ? <PageView page={left} /> : null}
+            {right ? <PageView page={right} /> : <div className="hidden lg:block" />}
+          </motion.div>
+        </div>
       </div>
     </div>
   );
+}
+
+const pageShell = "flex aspect-[148/210] min-w-0 flex-col justify-between overflow-hidden border-b border-separator-border p-5 lg:border-b-0 lg:border-e";
+
+function PageNumber({ n }: { n: number }) {
+  return <p className="text-end text-caption-1-medium text-text-tertiary">{n}</p>;
 }
 
 function PageView({ page }: { page: PrintPage }) {
@@ -115,16 +163,15 @@ function PageView({ page }: { page: PrintPage }) {
         <AnimatePresence initial={false}>
           <motion.div
             key={page.background}
-            className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center"
             style={{ background: page.background, color: page.color }}
             initial={reduce ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={reduce ? { duration: 0 } : tween(0.28)}
           >
-            <p className="micro" style={{ color: "inherit" }}>Family edition · Vol. I</p>
-            <h2 className="font-serif text-[28px] font-normal leading-tight">{page.title}</h2>
-            <p className="font-serif text-sm italic opacity-80">{page.subtitle}</p>
+            <h2 className="text-title-1-semibold">{page.title}</h2>
+            <p className="text-body-regular opacity-80">{page.subtitle}</p>
           </motion.div>
         </AnimatePresence>
       </section>
@@ -132,58 +179,60 @@ function PageView({ page }: { page: PrintPage }) {
   }
   if (page.kind === "contents") {
     return (
-      <section className="flex aspect-[148/210] min-w-0 flex-col justify-between border-b border-rule p-5 desk:border-b-0 desk:border-r">
+      <section className={pageShell}>
         <div className="min-w-0">
-          <p className="micro mb-3">Contents</p>
+          <p className="mb-3 text-caption-1-medium text-text-secondary">Contents</p>
           {page.entries.map((entry) => (
-            <div key={entry.label} className="flex min-w-0 justify-between gap-3 border-b border-rule py-1.5 text-[13px]">
-              <span>{entry.label}</span>
-              <span className="micro">{String(entry.page).padStart(2, "0")}</span>
+            <div key={entry.label} className="flex min-w-0 justify-between gap-3 border-b border-separator-border py-1.5 text-body-2-regular text-text-primary">
+              <span className="truncate">{entry.label}</span>
+              <span className="text-text-secondary">{entry.page}</span>
             </div>
           ))}
         </div>
-        <p className="micro text-right">Page {String(page.pageNumber).padStart(2, "0")} · A5 (148 × 210mm)</p>
+        <PageNumber n={page.pageNumber} />
       </section>
     );
   }
   if (page.kind === "album") {
     return (
-      <section className="flex aspect-[148/210] flex-col justify-between border-b border-rule p-5 desk:border-b-0 desk:border-r">
-        <div>
-          <p className="micro">{page.album}</p>
+      <section className={pageShell}>
+        <div className="min-w-0">
+          <p className="text-caption-1-medium text-text-secondary">{page.album}</p>
           {page.photos.map((photo) => (
-            <figure key={photo.caption} className="mt-3">
-              <img src={photo.src} alt="" className="aspect-[4/3] w-full object-cover" />
-              <figcaption className="mt-1 font-hand text-lg">{photo.caption}</figcaption>
+            <figure key={`${photo.src}-${photo.caption}`} className="mt-3">
+              <img src={photo.src} alt="" className="aspect-[4/3] w-full rounded-sm object-cover" />
+              {photo.caption ? <figcaption className="mt-1 font-hand text-title-3-medium text-accent-800">{photo.caption}</figcaption> : null}
             </figure>
           ))}
         </div>
-        <p className="micro text-right">Page {String(page.pageNumber).padStart(2, "0")}</p>
+        <PageNumber n={page.pageNumber} />
       </section>
     );
   }
   return (
-    <section className="flex aspect-[148/210] flex-col justify-between overflow-hidden border-b border-rule p-5 desk:border-b-0 desk:border-r">
-      <div>
-        <p className="micro">{page.continued ? `Continued · ${page.meta}` : page.meta}</p>
-        <h2 className="mt-1 font-serif text-2xl font-normal leading-tight">{page.title}</h2>
-        <p className="font-serif text-sm italic text-inksoft">{page.byline}</p>
-        {page.showNote && page.note ? <p className="mt-3 font-hand text-lg leading-snug text-handink">{page.note}</p> : null}
+    <section className={pageShell}>
+      <div className="min-w-0">
+        <p className="text-caption-1-medium text-text-secondary">{page.continued ? `Continued, ${page.meta}` : page.meta}</p>
+        <h2 className="mt-1 text-title-2-semibold text-text-primary">{page.title}</h2>
+        {page.byline ? <p className="text-body-regular text-text-secondary">{page.byline}</p> : null}
+        {page.showNote && page.note ? <p className="mt-3 font-hand text-title-3-medium text-accent-800">{page.note}</p> : null}
         <ul className="mt-3">
-          {page.ingredients.map((line) => (
-            <li key={line} className="border-b border-rule py-1 text-[13px]">{line}</li>
+          {page.ingredients.map((line, index) => (
+            <li key={`${index}-${line}`} className="border-b border-separator-border py-1 text-body-2-regular text-text-primary">
+              {line}
+            </li>
           ))}
         </ul>
         <ol className="mt-2">
           {page.steps.map((step) => (
-            <li key={step.n} className="border-b border-rule py-1 text-[13px]">
-              <span className="micro mr-2">{String(step.n).padStart(2, "0")}</span>
-              {step.text}
+            <li key={step.n} className="flex gap-2 border-b border-separator-border py-1 text-body-2-regular text-text-primary">
+              <span className="shrink-0 text-text-secondary">{step.n}</span>
+              <span>{step.text}</span>
             </li>
           ))}
         </ol>
       </div>
-      <p className="micro text-right">Page {String(page.pageNumber).padStart(2, "0")} · A5 (148 × 210mm)</p>
+      <PageNumber n={page.pageNumber} />
     </section>
   );
 }

@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
+import { BIG } from "@/components/app/screen";
+import { BackButton } from "@/components/book-controls";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { Select, SelectItem } from "@/components/base/select/select";
+import { Textarea } from "@/components/base/textarea/textarea";
+import { toast } from "@/components/base/toast/toast";
 import { ApiError, api } from "@/lib/client-api";
 import { formatIngredientLines, parseIngredientLines } from "@/lib/ingredients";
 import { COURSE_LABEL } from "@/lib/format";
 import { COURSES, type Course, type RecipeDetail } from "@/lib/types";
+import { cx } from "@/utils/cx";
 
 export function RecipeEditor({
   bookId,
@@ -18,6 +27,7 @@ export function RecipeEditor({
   kitchens: { id: string; name: string }[];
   recipe?: RecipeDetail;
 }) {
+  const router = useRouter();
   const [title, setTitle] = useState(recipe?.title ?? "");
   const [handedDownBy, setHandedDownBy] = useState(recipe?.handedDownBy ?? "");
   const [recipeBy, setRecipeBy] = useState(recipe?.recipeBy ?? "");
@@ -30,24 +40,23 @@ export function RecipeEditor({
   const [ingredients, setIngredients] = useState(recipe ? formatIngredientLines(recipe.ingredients) : "");
   const [steps, setSteps] = useState(recipe?.steps.join("\n") ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [identity, setIdentity] = useState<{ id: string; version: number } | null>(
-    recipe ? { id: recipe.id, version: recipe.version } : null,
-  );
+  const [saving, setSaving] = useState(false);
   const kitchenName = kitchens.find((kitchen) => kitchen.id === kitchenId)?.name ?? "Kitchen";
 
   useEffect(() => {
     const storedBy = localStorage.getItem("hmd-recipe-by") ?? "";
-    const storedDevice = localStorage.getItem("hmd-device-name") ?? "";
-    setDeviceName(storedDevice);
+    setDeviceName(localStorage.getItem("hmd-device-name") ?? "");
     if (!recipe?.recipeBy && storedBy) setRecipeBy(storedBy);
   }, [recipe?.recipeBy]);
-
-  const previewNote = useMemo(() => note.trim(), [note]);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    if (!title.trim()) {
+      setError("Give the recipe a name.");
+      return;
+    }
+    setSaving(true);
     try {
       const body = {
         kitchenId,
@@ -63,143 +72,135 @@ export function RecipeEditor({
           .split("\n")
           .map((step) => step.trim())
           .filter(Boolean),
-        version: identity?.version,
+        version: recipe?.version,
       };
-      if (identity) {
-        const result = await api<{ version: number }>(`/api/books/${bookId}/recipes/${identity.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        setIdentity({ id: identity.id, version: result.version });
-      } else {
-        const result = await api<{ id: string }>(`/api/books/${bookId}/recipes`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        setIdentity({ id: result.id, version: 1 });
-      }
+      const id = recipe
+        ? (await api<{ version: number }>(`/api/books/${bookId}/recipes/${recipe.id}`, { method: "PATCH", body: JSON.stringify(body) }), recipe.id)
+        : (await api<{ id: string }>(`/api/books/${bookId}/recipes`, { method: "POST", body: JSON.stringify(body) })).id;
       if (recipeBy.trim()) localStorage.setItem("hmd-recipe-by", recipeBy.trim());
       if (deviceName.trim()) localStorage.setItem("hmd-device-name", deviceName.trim());
-      setNotice("Saved");
+      toast.success(recipe ? "Changes saved" : "Added to the book");
+      router.push(`/recipes/${id}`);
+      router.refresh();
     } catch (caught) {
-      setNotice(null);
-      if (caught instanceof ApiError && caught.status === 409) {
-        setError("Someone else saved this recipe. Reload to see their version.");
-      } else {
-        setError(caught instanceof ApiError ? caught.message : "Could not save");
-      }
+      setError(
+        caught instanceof ApiError && caught.status === 409
+          ? "Someone else saved this recipe a moment ago. Reload to see their version."
+          : caught instanceof ApiError
+            ? caught.message
+            : "Could not save. Check the connection and try again.",
+      );
+      setSaving(false);
     }
   }
 
   return (
-    <form
-      className="grid items-start gap-8 desk:grid-cols-2"
-      onSubmit={(event) => void save(event)}
-      onInput={() => {
-        if (notice) setNotice(null);
-      }}
-    >
-      <div>
-        <p className="micro">Filing into {kitchenName}</p>
-        <h2 className="mt-1 font-serif text-[28px] font-normal">{recipe ? "Edit recipe" : "Add a family recipe"}</h2>
-        <Field label="Recipe title">
-          <input className={input} value={title} onChange={(event) => setTitle(event.target.value)} />
-        </Field>
-        <Field label="Handed down by">
-          <input className={input} value={handedDownBy} onChange={(event) => setHandedDownBy(event.target.value)} />
-        </Field>
-        <Field label="Recipe by">
-          <input className={input} value={recipeBy} onChange={(event) => setRecipeBy(event.target.value)} />
-        </Field>
-        <Field label="Your name on this device">
-          <input className={input} value={deviceName} onChange={(event) => setDeviceName(event.target.value)} />
-        </Field>
-        <Field label="Kitchen">
-          <select className={input} value={kitchenId} onChange={(event) => setKitchenId(event.target.value)}>
-            {kitchens.map((kitchen) => (
-              <option key={kitchen.id} value={kitchen.id}>
-                {kitchen.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="mb-4 grid grid-cols-2 gap-4">
-          <Field label="Course">
-            <select className={input} value={course} onChange={(event) => setCourse(event.target.value as Course)}>
-              {COURSES.map((item) => (
-                <option key={item} value={item}>
-                  {COURSE_LABEL[item]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Minutes">
-            <input className={input} inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value)} />
-          </Field>
-        </div>
-        <Field label="Servings">
-          <input className={input} inputMode="numeric" value={servings} onChange={(event) => setServings(event.target.value)} />
-        </Field>
-        <Field label="Handwritten margin story">
-          <textarea className={area} value={note} onChange={(event) => setNote(event.target.value)} />
-        </Field>
-        <Field label="Ingredients, one per line">
-          <textarea className={area} value={ingredients} onChange={(event) => setIngredients(event.target.value)} placeholder="1 1/4 cups pearl couscous" />
-        </Field>
-        <Field label="Method, one step per line">
-          <textarea className={`${area} min-h-40`} value={steps} onChange={(event) => setSteps(event.target.value)} />
-        </Field>
-        {error ? (
-          <p className="mb-3 text-sm text-accent" role="alert">
-            {error}
-          </p>
-        ) : null}
-        <p className="flex flex-wrap items-center gap-3">
-          <button type="submit" className="inline-flex min-h-11 items-center border border-ink bg-ink px-5 text-[12px] font-medium uppercase tracking-[0.08em] text-sheet">
-            Save to family book
-          </button>
-          {notice ? (
-            <span role="status" className="text-sm">
-              {notice}
-            </span>
-          ) : null}
-        </p>
-      </div>
-      <div>
-        <p className="micro mb-2">Live A5 page preview</p>
-        <div className="flex aspect-[148/210] flex-col justify-between border border-rule bg-sheet p-6 desk:p-8">
-          <div>
-            <p className="micro">
-              {COURSE_LABEL[course]} · {kitchenName} · {minutes || "0"} min
+    <div className="mx-auto w-full max-w-2xl lg:max-w-5xl lg:px-8">
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-background-secondary-default/85 px-4 pt-[calc(env(safe-area-inset-top)+8px)] pb-2 backdrop-blur-xl lg:top-16 lg:px-0 lg:pt-6">
+        <BackButton fallback={recipe ? `/recipes/${recipe.id}` : "/"} />
+        <p className="truncate text-headline-semibold text-text-primary">{recipe ? "Edit recipe" : "New recipe"}</p>
+        <Button type="submit" form="recipe-form" size="small" disabled={saving} className="rounded-full px-3">
+          Save
+        </Button>
+      </header>
+
+      <form id="recipe-form" noValidate onSubmit={(event) => void save(event)} className="grid items-start gap-8 px-4 pt-4 lg:grid-cols-[1fr_340px] lg:px-0">
+        <div className="grid gap-6">
+          <Card title="The dish">
+            <Input label="Recipe name" value={title} onChange={setTitle} isRequired fieldClassName="h-11" />
+            <div className="grid grid-cols-2 gap-3">
+              <Select label="Course" value={course} onChange={(key) => key && setCourse(key as Course)} triggerClassName="h-11">
+                {COURSES.map((item) => (
+                  <SelectItem key={item} id={item}>
+                    {COURSE_LABEL[item]}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Select label="Kitchen" value={kitchenId} onChange={(key) => key && setKitchenId(String(key))} triggerClassName="h-11">
+                {kitchens.map((kitchen) => (
+                  <SelectItem key={kitchen.id} id={kitchen.id}>
+                    {kitchen.name}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Minutes" inputMode="numeric" value={minutes} onChange={setMinutes} fieldClassName="h-11" />
+              <Input label="Serves" inputMode="numeric" value={servings} onChange={setServings} fieldClassName="h-11" />
+            </div>
+          </Card>
+
+          <Card title="Who it comes from">
+            <Input label="Handed down by" hint="Who the family learned it from." value={handedDownBy} onChange={setHandedDownBy} fieldClassName="h-11" />
+            <Input label="Recipe by" value={recipeBy} onChange={setRecipeBy} fieldClassName="h-11" />
+            <Input label="Your name on this phone" hint="Only kept on this device." value={deviceName} onChange={setDeviceName} fieldClassName="h-11" />
+          </Card>
+
+          <Card title="Margin note">
+            <Textarea
+              label="A tip or a story, in their words"
+              hint="Shows on the recipe in handwriting."
+              value={note}
+              onChange={setNote}
+              rows={3}
+              autoResize
+            />
+          </Card>
+
+          <Card title="Ingredients">
+            <Textarea
+              label="One per line"
+              hint="Amount first, like 1 1/4 cups pearl couscous. Fractions scale with servings."
+              value={ingredients}
+              onChange={setIngredients}
+              rows={6}
+              autoResize
+            />
+          </Card>
+
+          <Card title="Method">
+            <Textarea label="One step per line" value={steps} onChange={setSteps} rows={8} autoResize />
+          </Card>
+
+          {error ? (
+            <p role="alert" className="rounded-2xl bg-background-tertiary-error px-4 py-3 text-body-medium text-text-error-primary">
+              {error}
             </p>
-            <h3 className="mt-2 font-serif text-[30px] font-normal leading-tight">{title || "Untitled recipe"}</h3>
-            <p className="mt-2 font-serif italic text-inksoft">Handed down by {handedDownBy || "Family"}</p>
-            {recipeBy.trim() ? <p className="font-serif italic text-inksoft">From {recipeBy.trim()}&apos;s kitchen</p> : null}
-            {notice && deviceName.trim() ? <p className="mt-2 text-sm text-inksoft">Last edited by {deviceName.trim()}, just now</p> : null}
-            {previewNote ? (
-              <div className="tape relative mt-4 border border-noteborder bg-note px-4 py-3">
-                <p className="font-hand text-[21px] leading-snug text-handink">{previewNote}</p>
-              </div>
-            ) : null}
-          </div>
-          <div className="flex items-center justify-between border-t border-rule pt-3">
-            <span className="micro">{bookTitle}</span>
-            <span className="micro">A5</span>
-          </div>
+          ) : null}
+
+          <Button type="submit" disabled={saving} className={cx(BIG, "w-full")}>
+            {saving ? "Saving" : recipe ? "Save changes" : "Add to the book"}
+          </Button>
         </div>
-      </div>
-    </form>
+
+        <aside className="hidden lg:sticky lg:top-40 lg:block" aria-label="Printed page preview">
+          <p className="mb-2 text-body-medium text-text-secondary">How it prints</p>
+          <div className="flex aspect-[148/210] flex-col justify-between rounded-lg bg-background-primary-default p-7 shadow-lg">
+            <div>
+              <p className="text-caption-1-medium text-text-secondary">
+                {COURSE_LABEL[course]}, {kitchenName}, {minutes || "0"} min
+              </p>
+              <h3 className="mt-2 text-title-1-semibold text-text-primary">{title || "Untitled recipe"}</h3>
+              <p className="mt-2 text-body-regular text-text-secondary">Handed down by {handedDownBy || "the family"}</p>
+              {deviceName.trim() ? <p className="mt-1 text-caption-1-regular text-text-tertiary">Last edited by {deviceName.trim()}</p> : null}
+              {note.trim() ? <p className="mt-4 font-hand text-title-3-medium text-accent-800">{note.trim()}</p> : null}
+            </div>
+            <div className="flex items-center justify-between border-t border-separator-border pt-3 text-caption-1-medium text-text-secondary">
+              <span>{bookTitle}</span>
+              <span>A5</span>
+            </div>
+          </div>
+        </aside>
+      </form>
+    </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <label className="mb-4 block">
-      <span className="micro mb-1 block">{label}</span>
+    <fieldset className="grid gap-4 rounded-3xl bg-background-primary-default p-4 shadow-card">
+      <legend className="float-left text-title-3-semibold text-text-primary">{title}</legend>
       {children}
-    </label>
+    </fieldset>
   );
 }
-
-const input = "min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent";
-const area = "min-h-24 w-full border border-rule bg-sheet p-3 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent";

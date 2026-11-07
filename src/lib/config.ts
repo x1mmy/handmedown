@@ -1,20 +1,5 @@
 import { AppError } from "@/lib/errors";
 
-export type DataAdapterName = "demo" | "supabase";
-
-const ADAPTERS: readonly DataAdapterName[] = ["demo", "supabase"];
-
-/**
- * Demo is an explicit local opt-in. Anything else is Supabase, which must be
- * fully configured or the process fails. There is no silent demo fallback.
- */
-export function dataAdapter(): DataAdapterName {
-  const raw = process.env.HMD_DATA_ADAPTER;
-  if (raw === undefined || raw === "") return "supabase";
-  if ((ADAPTERS as readonly string[]).includes(raw)) return raw as DataAdapterName;
-  throw new AppError(500, `HMD_DATA_ADAPTER must be "demo" or "supabase" (got ${JSON.stringify(raw)})`);
-}
-
 export function supabasePublicEnv(): { url: string; key: string } | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -38,7 +23,7 @@ export function assertSupabaseConfigured(): { url: string; publishableKey: strin
   if (!pub || !secretKey) {
     throw new AppError(
       500,
-      "Supabase mode is misconfigured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SECRET_KEY. There is no demo fallback.",
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY in .env.",
     );
   }
   return { url: pub.url, publishableKey: pub.key, secretKey };

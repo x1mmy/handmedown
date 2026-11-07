@@ -1,54 +1,44 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { RiArrowRightSLine, RiDeleteBinLine } from "@remixicon/react";
 
 import { InlineName } from "@/components/book-controls";
-import { PushRow, tween } from "@/components/motion";
+import { Avatar } from "@/components/base/avatar/avatar";
+import { Button } from "@/components/base/buttons/button";
+import { IconButton } from "@/components/base/buttons/icon-button";
+import { Input } from "@/components/base/input/input";
+import { toast } from "@/components/base/toast/toast";
 import type { KitchenDesk } from "@/lib/types";
 
 export function KitchenManager({ bookId, desk }: { bookId: string; desk: KitchenDesk }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const reduce = useReducedMotion();
-  const knownMembers = useRef<Set<string> | null>(null);
+  const owner = desk.access === "owner";
 
-  useEffect(() => {
-    const next = new Set<string>();
-    for (const kitchen of desk.kitchens) {
-      for (const member of kitchen.members) next.add(`${kitchen.id}:${member.userId}`);
-    }
-    knownMembers.current = next;
-  }, [desk]);
-
-  async function send(url: string, init?: RequestInit) {
-    setError(null);
-    const response = await fetch(url, {
-      ...init,
-      headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-    });
-    const body = (await response.json().catch(() => ({}))) as { message?: string; token?: string };
+  async function send(url: string, init?: RequestInit): Promise<boolean> {
+    const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+    const body = (await response.json().catch(() => ({}))) as { message?: string };
     if (!response.ok) {
-      setError(body.message ?? "That did not work");
-      return null;
+      toast.error(body.message ?? "That did not work");
+      return false;
     }
     router.refresh();
-    return body;
+    return true;
   }
 
   return (
-    <div className="grid gap-8">
-      {error ? <p className="text-sm text-accent">{error}</p> : null}
+    <div className="mt-6 grid gap-4 px-4 lg:grid-cols-2 lg:px-0">
       {desk.kitchens.map((kitchen) => (
-        <section key={kitchen.id} className="border border-rule bg-sheet p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h3 className="min-w-0 font-serif text-2xl font-normal">
+        <section key={kitchen.id} className="rounded-3xl bg-background-primary-default p-4 shadow-card">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="min-w-0 flex-1">
               <InlineName
                 value={kitchen.name}
                 label={`Kitchen name for ${kitchen.name}`}
-                displayClass="font-serif text-2xl font-normal"
+                displayClass="text-title-2-semibold text-text-primary"
                 save={async (next) => {
                   const response = await fetch(`/api/books/${bookId}/kitchens/${kitchen.id}`, {
                     method: "PATCH",
@@ -61,63 +51,66 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
                   }
                 }}
               />
-            </h3>
-            <p className="micro">{kitchen.myRole ? `You are ${kitchen.myRole}` : "Not your kitchen"} · {kitchen.contentCount} attached</p>
-          </div>
-          <ul className="mt-3 divide-y divide-rule border-y border-rule">
-            {kitchen.members.map((member) => {
-              const fresh = knownMembers.current !== null && !knownMembers.current.has(`${kitchen.id}:${member.userId}`);
-              return (
-                <li key={member.userId}>
-                  <PushRow fresh={fresh}>
-                    <div className="flex items-center justify-between gap-3 py-2 text-sm">
-                      <span className="flex items-center gap-2">
-                        <motion.span
-                          aria-hidden
-                          className="inline-flex h-7 w-7 items-center justify-center border border-rule bg-paper text-[11px]"
-                          initial={fresh && !reduce ? { x: -12, opacity: 0 } : false}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={reduce ? { duration: 0 } : tween(0.22)}
-                        >
-                          {initials(member.name)}
-                        </motion.span>
-                        <span>{member.name}</span>
-                      </span>
-                      <span className="micro">{member.role}</span>
-                    </div>
-                  </PushRow>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {desk.access === "owner" ? (
-              <button
-                type="button"
-                className={line}
-                onClick={() => void send(`/api/books/${bookId}/kitchens/${kitchen.id}`, { method: "DELETE" })}
-              >
-                Delete kitchen
-              </button>
+            </h2>
+            {owner ? (
+              <IconButton
+                icon={RiDeleteBinLine}
+                aria-label={`Delete ${kitchen.name}`}
+                onClick={() => {
+                  if (window.confirm(`Delete ${kitchen.name}? Only empty kitchens can be deleted.`)) {
+                    void send(`/api/books/${bookId}/kitchens/${kitchen.id}`, { method: "DELETE" });
+                  }
+                }}
+              />
             ) : null}
           </div>
+
+          {kitchen.members.length > 0 ? (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex -space-x-2 rtl:space-x-reverse">
+                {kitchen.members.slice(0, 5).map((member) => (
+                  <Avatar key={member.userId} initials={initials(member.name)} alt={member.name} className="text-caption-1-semibold ring-2 ring-background-primary-default" />
+                ))}
+              </div>
+              <span className="truncate text-body-regular text-text-secondary">{kitchen.members.map((member) => member.name).join(", ")}</span>
+            </div>
+          ) : null}
+
+          <Link
+            href={`/?kitchen=${kitchen.id}`}
+            className="mt-4 flex h-12 items-center justify-between rounded-2xl bg-background-secondary-default px-4 text-headline-medium text-text-primary outline-none hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+          >
+            <span>
+              {kitchen.contentCount} {kitchen.contentCount === 1 ? "recipe or photo" : "recipes and photos"}
+            </span>
+            <RiArrowRightSLine className="size-5 text-foreground-icon-tertiary rtl:-scale-x-100" aria-hidden />
+          </Link>
         </section>
       ))}
 
-      {desk.access === "owner" ? (
-        <section className="border border-rule p-5">
-          <h3 className="font-serif text-2xl font-normal">Add a kitchen</h3>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen name" aria-label="New kitchen name" className="min-h-11 min-w-0 flex-1 border-b border-ink bg-transparent text-base" />
-            <button
-              type="button"
-              className={solid}
-              onClick={() => void send(`/api/books/${bookId}/kitchens`, { method: "POST", body: JSON.stringify({ name }) }).then(() => setName(""))}
-            >
-              Create kitchen
-            </button>
+      {owner ? (
+        <form
+          className="rounded-3xl border border-dashed border-border-button-hover p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!name.trim()) return;
+            void send(`/api/books/${bookId}/kitchens`, { method: "POST", body: JSON.stringify({ name }) }).then((ok) => {
+              if (ok) {
+                setName("");
+                toast.success("Kitchen added");
+              }
+            });
+          }}
+        >
+          <p className="text-title-3-semibold text-text-primary">Add a kitchen</p>
+          <p className="mt-0.5 text-body-regular text-text-secondary">For another household in the family.</p>
+          <div className="mt-4 flex items-end gap-2">
+            <Input aria-label="New kitchen name" placeholder="Nan's Kitchen" value={name} onChange={setName} className="flex-1" fieldClassName="h-11" />
+            <Button type="submit" className="h-11 rounded-xl px-4">
+              Add
+            </Button>
           </div>
-        </section>
+        </form>
       ) : null}
     </div>
   );
@@ -125,8 +118,5 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "•";
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "?";
 }
-
-const solid = "inline-flex min-h-11 items-center border border-ink bg-ink px-4 text-[12px] font-medium uppercase tracking-[0.08em] text-sheet";
-const line = "inline-flex min-h-11 items-center border border-ink px-4 text-[12px] font-medium uppercase tracking-[0.08em]";
