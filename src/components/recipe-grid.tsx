@@ -37,6 +37,7 @@ export function RecipeGrid({ bookId, recipes }: { bookId: string; recipes: Recip
             </p>
             <h3 className="mt-1 font-serif text-[23px] font-normal leading-tight">{recipe.title}</h3>
             <p className="mt-1 font-serif text-[15px] italic text-inksoft">Handed down by {recipe.handedDownBy}</p>
+            {recipe.recipeBy ? <p className="font-serif text-[15px] italic text-inksoft">From {recipe.recipeBy}&apos;s kitchen</p> : null}
             <div className="mt-4 flex items-center justify-between border-t border-rule pt-3">
               <span className="micro">{recipe.favourite ? "Pinned favourite" : "In the book"}</span>
               <span className="micro">Made {recipe.cookedCount}×</span>

@@ -14,7 +14,7 @@ grant usage on schema private to authenticated;
 create table public.books (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  owner_id uuid not null references auth.users (id),
+  owner_id uuid not null,
   draft_key text unique,
   is_example boolean not null default false,
   created_at timestamptz not null default now(),
@@ -23,7 +23,7 @@ create table public.books (
 
 create table public.book_members (
   book_id uuid not null references public.books (id) on delete cascade,
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid not null,
   role text not null check (role in ('owner', 'reader')),
   created_at timestamptz not null default now(),
   primary key (book_id, user_id)
@@ -40,7 +40,7 @@ create table public.kitchens (
 create table public.kitchen_members (
   book_id uuid not null,
   kitchen_id uuid not null,
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid not null,
   role text not null check (role in ('lead', 'cook')),
   created_at timestamptz not null default now(),
   primary key (book_id, kitchen_id, user_id),
@@ -52,7 +52,7 @@ create table public.kitchen_join_requests (
   id uuid primary key default gen_random_uuid(),
   book_id uuid not null,
   kitchen_id uuid not null,
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid not null,
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   created_at timestamptz not null default now(),
   foreign key (book_id, kitchen_id) references public.kitchens (book_id, id),
@@ -69,6 +69,7 @@ create table public.recipes (
   kitchen_id uuid not null,
   title text not null,
   handed_down_by text not null default '',
+  recipe_by text not null default '',
   course text not null check (course in ('mains', 'sweets', 'bakes', 'sides')),
   minutes integer not null default 0 check (minutes >= 0),
   servings integer not null check (servings > 0),
@@ -79,7 +80,7 @@ create table public.recipes (
   deleted_at timestamptz,
   cooked_count integer not null default 0 check (cooked_count >= 0),
   hero_media_id uuid,
-  created_by uuid not null references auth.users (id),
+  created_by uuid not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (book_id, id),
@@ -90,7 +91,7 @@ create table public.recipes (
 create table public.recipe_favourites (
   book_id uuid not null,
   recipe_id uuid not null,
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid not null,
   created_at timestamptz not null default now(),
   primary key (recipe_id, user_id),
   foreign key (book_id, recipe_id) references public.recipes (book_id, id) on delete cascade
@@ -108,7 +109,7 @@ create table public.media_assets (
   id uuid primary key default gen_random_uuid(),
   book_id uuid not null references public.books (id) on delete cascade,
   kitchen_id uuid,
-  owner_id uuid not null references auth.users (id),
+  owner_id uuid not null,
   storage_path text not null default '',
   mime text not null,
   width integer,
@@ -141,9 +142,9 @@ create table public.book_invites (
   id uuid primary key default gen_random_uuid(),
   book_id uuid not null references public.books (id) on delete cascade,
   token_hash text not null unique,
-  created_by uuid not null references auth.users (id),
+  created_by uuid not null,
   revoked_at timestamptz,
-  redeemed_by uuid references auth.users (id),
+  redeemed_by uuid,
   redeemed_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -152,7 +153,7 @@ create table public.cooking_events (
   id uuid primary key default gen_random_uuid(),
   book_id uuid not null,
   recipe_id uuid not null,
-  user_id uuid not null references auth.users (id),
+  user_id uuid not null,
   idempotency_key text not null,
   created_at timestamptz not null default now(),
   unique (recipe_id, user_id, idempotency_key),
@@ -162,7 +163,7 @@ create table public.cooking_events (
 create table public.export_jobs (
   id uuid primary key default gen_random_uuid(),
   book_id uuid not null references public.books (id) on delete cascade,
-  requested_by uuid not null references auth.users (id),
+  requested_by uuid not null,
   status text not null default 'queued' check (status in ('queued', 'ready', 'failed')),
   snapshot jsonb not null,
   pdf_path text,
@@ -185,7 +186,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+  select auth.role() = 'service_role' or exists (
     select 1 from public.book_members m
     where m.book_id = p_book_id and m.user_id = auth.uid()
   );
@@ -198,7 +199,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+  select auth.role() = 'service_role' or exists (
     select 1 from public.book_members m
     where m.book_id = p_book_id and m.user_id = auth.uid() and m.role = 'owner'
   );
@@ -211,7 +212,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+  select auth.role() = 'service_role' or exists (
     select 1 from public.kitchen_members m
     where m.book_id = p_book_id and m.kitchen_id = p_kitchen_id and m.user_id = auth.uid()
   );
@@ -224,7 +225,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select exists (
+  select auth.role() = 'service_role' or exists (
     select 1 from public.kitchen_members m
     where m.book_id = p_book_id and m.kitchen_id = p_kitchen_id and m.user_id = auth.uid() and m.role = 'lead'
   );
@@ -500,6 +501,16 @@ create policy export_jobs_delete on public.export_jobs for delete to authenticat
 -- Privileged mutations
 -- ---------------------------------------------------------------------------
 
+create or replace function private.actor()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(auth.uid(), '00000000-0000-4000-8000-0000000000aa'::uuid);
+$$;
+
 create or replace function private.require_user()
 returns uuid
 language plpgsql
@@ -508,6 +519,9 @@ security definer
 set search_path = ''
 as $$
 begin
+  if auth.role() = 'service_role' then
+    return '00000000-0000-4000-8000-0000000000aa'::uuid;
+  end if;
   if auth.uid() is null then
     raise exception 'sign in required' using errcode = '28000';
   end if;
@@ -535,26 +549,26 @@ begin
   end if;
   select id, owner_id into v_book, v_owner from public.books where draft_key = p_draft_key;
   if v_book is not null then
-    if v_owner <> auth.uid() then
+    if v_owner <> private.actor() then
       raise exception 'draft key conflict' using errcode = 'H4090';
     end if;
     return v_book;
   end if;
   insert into public.books (title, owner_id, draft_key)
-  values (trim(p_title), auth.uid(), p_draft_key)
+  values (trim(p_title), private.actor(), p_draft_key)
   returning id into v_book;
   insert into public.book_members (book_id, user_id, role)
-  values (v_book, auth.uid(), 'owner');
+  values (v_book, private.actor(), 'owner');
   insert into public.kitchens (book_id, name)
   values (v_book, coalesce(nullif(trim(p_kitchen_name), ''), 'Our Kitchen'))
   returning id into v_kitchen;
   insert into public.kitchen_members (book_id, kitchen_id, user_id, role)
-  values (v_book, v_kitchen, auth.uid(), 'lead');
+  values (v_book, v_kitchen, private.actor(), 'lead');
   return v_book;
 exception
   when unique_violation then
     select id, owner_id into v_book, v_owner from public.books where draft_key = p_draft_key;
-    if v_owner = auth.uid() then return v_book; end if;
+    if v_owner = private.actor() then return v_book; end if;
     raise exception 'draft key conflict' using errcode = 'H4090';
 end;
 $$;
@@ -598,20 +612,21 @@ begin
     raise exception 'not a member of this kitchen' using errcode = '42501';
   end if;
   insert into public.recipes (
-    book_id, kitchen_id, title, handed_down_by, course, minutes, servings,
+    book_id, kitchen_id, title, handed_down_by, recipe_by, course, minutes, servings,
     margin_note, ingredients_json, steps_json, created_by
   ) values (
     p_book_id,
     v_kitchen,
     p_payload ->> 'title',
     coalesce(p_payload ->> 'handed_down_by', ''),
+    coalesce(p_payload ->> 'recipe_by', ''),
     p_payload ->> 'course',
     coalesce((p_payload ->> 'minutes')::int, 0),
     (p_payload ->> 'servings')::int,
     coalesce(p_payload ->> 'margin_note', ''),
     coalesce(p_payload -> 'ingredients_json', '[]'::jsonb),
     coalesce(p_payload -> 'steps_json', '[]'::jsonb),
-    auth.uid()
+    private.actor()
   ) returning id into v_id;
   return v_id;
 end;
@@ -653,6 +668,7 @@ begin
     kitchen_id = v_kitchen,
     title = coalesce(p_patch ->> 'title', title),
     handed_down_by = coalesce(p_patch ->> 'handed_down_by', handed_down_by),
+    recipe_by = coalesce(p_patch ->> 'recipe_by', recipe_by),
     course = coalesce(p_patch ->> 'course', course),
     minutes = coalesce((p_patch ->> 'minutes')::int, minutes),
     servings = coalesce((p_patch ->> 'servings')::int, servings),
@@ -668,13 +684,14 @@ end;
 $$;
 
 create or replace function private.soft_delete_recipe(p_recipe_id uuid)
-returns void
+returns timestamptz
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   r public.recipes%rowtype;
+  v_deleted timestamptz;
 begin
   perform private.require_user();
   select * into r from public.recipes where id = p_recipe_id for update;
@@ -686,7 +703,9 @@ begin
   end if;
   update public.recipes
     set deleted_at = now(), version = version + 1, updated_at = now()
-    where id = p_recipe_id;
+    where id = p_recipe_id
+    returning deleted_at into v_deleted;
+  return v_deleted;
 end;
 $$;
 
@@ -732,10 +751,10 @@ begin
   end if;
   if p_on then
     insert into public.recipe_favourites (book_id, recipe_id, user_id)
-    values (v_book, p_recipe_id, auth.uid())
+    values (v_book, p_recipe_id, private.actor())
     on conflict (recipe_id, user_id) do nothing;
   else
-    delete from public.recipe_favourites where recipe_id = p_recipe_id and user_id = auth.uid();
+    delete from public.recipe_favourites where recipe_id = p_recipe_id and user_id = private.actor();
   end if;
 end;
 $$;
@@ -759,7 +778,7 @@ begin
     raise exception 'recipe not found' using errcode = 'P0002';
   end if;
   insert into public.cooking_events (book_id, recipe_id, user_id, idempotency_key)
-  values (r.book_id, r.id, auth.uid(), trim(p_key))
+  values (r.book_id, r.id, private.actor(), trim(p_key))
   on conflict (recipe_id, user_id, idempotency_key) do nothing;
   get diagnostics v_inserted = row_count;
   if v_inserted = 0 then
@@ -789,7 +808,7 @@ begin
   end if;
   insert into public.kitchens (book_id, name) values (p_book_id, trim(p_name)) returning id into v_id;
   insert into public.kitchen_members (book_id, kitchen_id, user_id, role)
-  values (p_book_id, v_id, auth.uid(), 'lead');
+  values (p_book_id, v_id, private.actor(), 'lead');
   return v_id;
 end;
 $$;
@@ -1054,7 +1073,7 @@ begin
     raise exception 'not a member of this kitchen' using errcode = '42501';
   end if;
   insert into public.media_assets (book_id, kitchen_id, owner_id, mime, status)
-  values (p_book_id, p_kitchen_id, auth.uid(), p_mime, 'quarantine')
+  values (p_book_id, p_kitchen_id, private.actor(), p_mime, 'quarantine')
   returning id into v_id;
   return v_id;
 end;
@@ -1071,14 +1090,18 @@ declare
 begin
   perform private.require_user();
   select * into r from public.media_assets where id = p_media_id;
-  if not found or r.owner_id <> auth.uid() then
+  if not found or r.owner_id <> private.actor() then
     raise exception 'photo not found' using errcode = 'P0002';
   end if;
   if r.status <> 'quarantine' then
     raise exception 'photo is not awaiting review' using errcode = 'H4090';
   end if;
+  if p_path is distinct from ('book/' || r.book_id::text || '/' || r.id::text || '.jpg')
+     or p_path like '%..%' or p_path like '%/%/%/%' then
+    raise exception 'invalid storage path' using errcode = '42501';
+  end if;
   update public.media_assets
-    set status = 'ready', width = p_width, height = p_height, storage_path = p_path
+    set status = 'ready', width = p_width, height = p_height, storage_path = 'book/' || r.book_id::text || '/' || r.id::text || '.jpg'
     where id = p_media_id;
 end;
 $$;
@@ -1093,7 +1116,7 @@ begin
   perform private.require_user();
   update public.media_assets
     set status = 'rejected'
-    where id = p_media_id and owner_id = auth.uid() and status = 'quarantine';
+    where id = p_media_id and owner_id = private.actor() and status = 'quarantine';
 end;
 $$;
 
@@ -1143,7 +1166,7 @@ begin
     raise exception 'not found' using errcode = 'P0002';
   end if;
   insert into public.export_jobs (book_id, requested_by, status, snapshot)
-  values (p_book_id, auth.uid(), 'queued', p_snapshot)
+  values (p_book_id, private.actor(), 'queued', p_snapshot)
   returning id into v_id;
   return v_id;
 end;
@@ -1155,11 +1178,30 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_book uuid;
+  v_expected text;
 begin
   perform private.require_user();
+  select book_id into v_book from public.export_jobs where id = p_job_id;
+  if v_book is null then
+    raise exception 'export not found' using errcode = 'P0002';
+  end if;
+  if p_status not in ('ready', 'failed') then
+    raise exception 'invalid export status' using errcode = '22023';
+  end if;
+  v_expected := 'exports/' || p_job_id::text || '.pdf';
+  if p_status = 'ready' and (p_pdf_path is distinct from v_expected or p_pdf_path like '%..%') then
+    raise exception 'invalid storage path' using errcode = '42501';
+  end if;
+  if p_status = 'failed' and p_pdf_path is not null then
+    raise exception 'invalid storage path' using errcode = '42501';
+  end if;
   update public.export_jobs
-    set status = p_status, pdf_path = p_pdf_path, error = p_error
-    where id = p_job_id and requested_by = auth.uid();
+    set status = p_status,
+        pdf_path = case when p_status = 'ready' then v_expected else null end,
+        error = p_error
+    where id = p_job_id;
   if not found then
     raise exception 'export not found' using errcode = 'P0002';
   end if;
@@ -1184,7 +1226,7 @@ returns integer language sql security invoker set search_path = ''
 as $$ select private.update_recipe(p_recipe_id, p_version, p_patch); $$;
 
 create or replace function public.soft_delete_recipe(p_recipe_id uuid)
-returns void language sql security invoker set search_path = ''
+returns timestamptz language sql security invoker set search_path = ''
 as $$ select private.soft_delete_recipe(p_recipe_id); $$;
 
 create or replace function public.undo_delete_recipe(p_recipe_id uuid)
@@ -1287,6 +1329,16 @@ begin
     execute format('grant execute on function %I.%I(%s) to authenticated', r.nspname, r.proname, r.args);
   end loop;
 end $$;
+
+-- Completion functions are not callable from the browser. The Node server calls them with the secret key.
+revoke all on function public.mark_media_ready(uuid, integer, integer, text) from public, anon, authenticated;
+revoke all on function public.finish_export_job(uuid, text, text, text) from public, anon, authenticated;
+revoke all on function private.mark_media_ready(uuid, integer, integer, text) from public, anon, authenticated;
+revoke all on function private.finish_export_job(uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.mark_media_ready(uuid, integer, integer, text) to service_role;
+grant execute on function public.finish_export_job(uuid, text, text, text) to service_role;
+grant execute on function private.mark_media_ready(uuid, integer, integer, text) to service_role;
+grant execute on function private.finish_export_job(uuid, text, text, text) to service_role;
 
 insert into storage.buckets (id, name, public)
 values ('media', 'media', false)

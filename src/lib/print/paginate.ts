@@ -45,7 +45,12 @@ type RecipeChunk = Omit<Extract<PrintPage, { kind: "recipe" }>, "pageNumber">;
 
 function paginateRecipe(recipe: ExportSnapshot["recipes"][number]): RecipeChunk[] {
   const meta = `${recipe.course} · ${recipe.kitchenName} · ${recipe.minutes} min · Serves ${recipe.servings}`;
-  const byline = recipe.handedDownBy ? `Handed down by ${recipe.handedDownBy}` : "Handed down";
+  const byline = [
+    recipe.handedDownBy ? `Handed down by ${recipe.handedDownBy}` : "",
+    recipe.recipeBy ? `From ${recipe.recipeBy}'s kitchen` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Handed down";
   const steps = recipe.steps.map((text, index) => ({ n: index + 1, text, units: stepUnits(text) }));
   let ingredients = [...recipe.ingredients];
   const pages: RecipeChunk[] = [];

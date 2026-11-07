@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "@/lib/client-api";
 import { formatIngredientLines, parseIngredientLines } from "@/lib/ingredients";
@@ -20,6 +20,8 @@ export function RecipeEditor({
 }) {
   const [title, setTitle] = useState(recipe?.title ?? "");
   const [handedDownBy, setHandedDownBy] = useState(recipe?.handedDownBy ?? "");
+  const [recipeBy, setRecipeBy] = useState(recipe?.recipeBy ?? "");
+  const [deviceName, setDeviceName] = useState("");
   const [course, setCourse] = useState<Course>(recipe?.course ?? "mains");
   const [minutes, setMinutes] = useState(String(recipe?.minutes ?? 30));
   const [servings, setServings] = useState(String(recipe?.servings ?? 4));
@@ -34,6 +36,13 @@ export function RecipeEditor({
   );
   const kitchenName = kitchens.find((kitchen) => kitchen.id === kitchenId)?.name ?? "Kitchen";
 
+  useEffect(() => {
+    const storedBy = localStorage.getItem("hmd-recipe-by") ?? "";
+    const storedDevice = localStorage.getItem("hmd-device-name") ?? "";
+    setDeviceName(storedDevice);
+    if (!recipe?.recipeBy && storedBy) setRecipeBy(storedBy);
+  }, [recipe?.recipeBy]);
+
   const previewNote = useMemo(() => note.trim(), [note]);
 
   async function save(event: React.FormEvent) {
@@ -44,6 +53,7 @@ export function RecipeEditor({
         kitchenId,
         title,
         handedDownBy,
+        recipeBy,
         course,
         minutes: Number(minutes),
         servings: Number(servings),
@@ -68,6 +78,8 @@ export function RecipeEditor({
         });
         setIdentity({ id: result.id, version: 1 });
       }
+      if (recipeBy.trim()) localStorage.setItem("hmd-recipe-by", recipeBy.trim());
+      if (deviceName.trim()) localStorage.setItem("hmd-device-name", deviceName.trim());
       setNotice("Saved");
     } catch (caught) {
       setNotice(null);
@@ -95,6 +107,12 @@ export function RecipeEditor({
         </Field>
         <Field label="Handed down by">
           <input className={input} value={handedDownBy} onChange={(event) => setHandedDownBy(event.target.value)} />
+        </Field>
+        <Field label="Recipe by">
+          <input className={input} value={recipeBy} onChange={(event) => setRecipeBy(event.target.value)} />
+        </Field>
+        <Field label="Your name on this device">
+          <input className={input} value={deviceName} onChange={(event) => setDeviceName(event.target.value)} />
         </Field>
         <Field label="Kitchen">
           <select className={input} value={kitchenId} onChange={(event) => setKitchenId(event.target.value)}>
@@ -156,6 +174,8 @@ export function RecipeEditor({
             </p>
             <h3 className="mt-2 font-serif text-[30px] font-normal leading-tight">{title || "Untitled recipe"}</h3>
             <p className="mt-2 font-serif italic text-inksoft">Handed down by {handedDownBy || "Family"}</p>
+            {recipeBy.trim() ? <p className="font-serif italic text-inksoft">From {recipeBy.trim()}&apos;s kitchen</p> : null}
+            {notice && deviceName.trim() ? <p className="mt-2 text-sm text-inksoft">Last edited by {deviceName.trim()}, just now</p> : null}
             {previewNote ? (
               <div className="tape relative mt-4 border border-noteborder bg-note px-4 py-3">
                 <p className="font-hand text-[21px] leading-snug text-handink">{previewNote}</p>
@@ -181,5 +201,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const input = "w-full border-b border-ink bg-transparent py-2 outline-none";
-const area = "min-h-24 w-full border border-rule bg-sheet p-3 outline-none";
+const input = "min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const area = "min-h-24 w-full border border-rule bg-sheet p-3 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent";

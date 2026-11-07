@@ -95,7 +95,7 @@ export default async function RecipesPage({
             <Link
               key={item}
               href={hrefFor(item)}
-              className={`inline-flex min-h-11 items-center text-[12px] uppercase tracking-[0.08em] ${
+              className={`inline-flex min-h-11 min-w-11 items-center justify-center text-[12px] uppercase tracking-[0.08em] ${
                 course === item ? "font-semibold text-ink underline decoration-1 underline-offset-[6px]" : "text-inkmuted"
               }`}
             >
@@ -109,7 +109,7 @@ export default async function RecipesPage({
           defaultValue={query.q ?? ""}
           placeholder="Search dish, ingredient, person"
           aria-label="Search recipes"
-          className="w-full border-b border-inkmuted bg-transparent py-2 outline-none focus:border-ink desk:w-72"
+          className="min-h-11 w-full border-b border-inkmuted bg-transparent py-2 text-base focus:border-ink desk:w-72"
         />
       </form>
 

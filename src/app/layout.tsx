@@ -25,13 +25,14 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  interactiveWidget: "resizes-content",
   colorScheme: "light",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable} ${hand.variable}`}>
-      <body className="flex min-h-dvh flex-col font-sans text-[15px] leading-normal text-ink antialiased">
+      <body className="flex min-h-dvh flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-sans text-[15px] leading-normal text-ink antialiased">
         <MotionRoot>
           <div className="flex min-h-dvh flex-col">
             <div className="flex-1">

@@ -8,7 +8,7 @@ function snapshot(steps: string[]): ExportSnapshot {
   return {
     version: 1,
     bookId: "book",
-    title: "The Anjum & Cooper Table",
+    title: "The Fam",
     subtitle: "Recipes from three kitchens",
     clothId: "olive",
     bleed: false,
@@ -20,6 +20,7 @@ function snapshot(steps: string[]): ExportSnapshot {
         course: "mains",
         kitchenName: "Nan's Kitchen",
         handedDownBy: "Nan",
+        recipeBy: "Nani",
         minutes: 35,
         servings: 4,
         marginNote: "Dry the skin.",

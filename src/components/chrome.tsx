@@ -9,7 +9,7 @@ export function ExampleStrip() {
     <div className="border-b border-rule bg-paperwarm px-4 py-2 text-[13px] text-inksoft desk:px-6">
       <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3">
         <span>Viewing the example family book</span>
-        <Link href="/books/new" className="border-b border-ink pb-px text-[12px] font-semibold uppercase tracking-[0.05em] text-ink">
+        <Link href="/books/new" className="inline-flex min-h-11 items-center border-b border-ink pb-px text-[12px] font-semibold uppercase tracking-[0.05em] text-ink">
           Start our own book
         </Link>
       </div>
@@ -19,7 +19,7 @@ export function ExampleStrip() {
 
 export function Masthead({ book, kitchenId }: { book: BookDetail; kitchenId?: string }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-rule bg-paper/95 backdrop-blur-[6px]">
+    <header className="sticky top-0 z-30 border-b border-rule bg-paper/95 pt-[env(safe-area-inset-top)] backdrop-blur-[6px]">
       <div className="mx-auto max-w-page px-4 pt-3 desk:px-6 desk:pt-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b-2 border-ink pb-3">
           <div className="flex min-w-0 flex-wrap items-baseline gap-3">

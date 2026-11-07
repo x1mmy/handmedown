@@ -227,11 +227,12 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
             {COURSE_LABEL[recipe.course]} · {recipe.kitchenName} · {formatMinutes(recipe.minutes)}
           </p>
           <h2 className="mt-1 font-serif text-[32px] font-normal leading-tight desk:text-[40px]">{recipe.title}</h2>
+          {recipe.recipeBy ? <p className="font-serif italic text-inksoft">From {recipe.recipeBy}&apos;s kitchen</p> : null}
           <p className="font-serif text-[17px] italic text-inksoft">Handed down by {recipe.handedDownBy}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={line} aria-pressed={cookMode} onClick={() => setCookMode((value) => !value)}>
-            Propped-phone cook mode: {cookMode ? "On" : "Off"}
+          <button type="button" className={`${line} max-w-full whitespace-normal text-center`} aria-pressed={cookMode} onClick={() => setCookMode((value) => !value)}>
+            Cook mode {cookMode ? "on" : "off"}
           </button>
           <motion.button
             type="button"
@@ -301,6 +302,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
               <li key={`${ingredient.original_text}-${index}`}>
                 <button
                   type="button"
+                  aria-pressed={Boolean(checked[index])}
                   onClick={() => setChecked((current) => current.map((item, itemIndex) => (itemIndex === index ? !item : item)))}
                   className={`flex min-h-11 w-full items-center justify-between gap-3 border-b border-rule py-2 text-left tabular-nums [font-variant-numeric:tabular-nums_diagonal-fractions] ${
                     cookMode ? "text-[17px]" : ""
@@ -371,14 +373,14 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
           <motion.div
             key="undo"
             role="status"
-            className="fixed bottom-[calc(20px+env(safe-area-inset-bottom))] left-1/2 z-[60] flex items-center gap-4 overflow-hidden bg-ink px-5 py-3 text-[13px] text-sheet"
-            initial={reduce ? { opacity: 1, y: 0, x: "-50%" } : { opacity: 0, y: 16, x: "-50%" }}
-            animate={{ opacity: 1, y: 0, x: "-50%" }}
-            exit={reduce ? { opacity: 0, x: "-50%" } : { opacity: 0, y: 12, x: "-50%" }}
+            className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-[60] mx-auto flex w-auto max-w-[calc(100vw-1.5rem-env(safe-area-inset-left)-env(safe-area-inset-right))] items-center justify-between gap-3 bg-ink px-4 py-2 text-[13px] text-sheet"
+            initial={reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
             transition={tween(0.24)}
           >
             <span>{toast}</span>
-            <button type="button" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#f3c6b8]" onClick={() => void undo()}>
+            <button type="button" className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-[#f3c6b8]" onClick={() => void undo()}>
               Undo
             </button>
           </motion.div>

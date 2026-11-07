@@ -48,6 +48,7 @@ export type SeedRecipe = {
   kitchenId: string;
   title: string;
   handedDownBy: string;
+  recipeBy: string;
   course: Course;
   minutes: number;
   servings: number;
@@ -70,14 +71,14 @@ export const SEED_USERS: SeedUser[] = [
   { id: USER_PREVIEW, email: "household@handmedown.local", name: "Example household" },
   { id: USER_NAN, email: "nan@handmedown.local", name: "Nan" },
   { id: USER_SAM, email: "sam@handmedown.local", name: "Sam" },
-  { id: USER_TOM, email: "tom@handmedown.local", name: "Tom Cooper" },
+  { id: USER_TOM, email: "tom@handmedown.local", name: "Tom" },
   { id: USER_LEILA, email: "leila@handmedown.local", name: "Leila" },
   { id: USER_OUTSIDER, email: "outsider@handmedown.local", name: "Outsider" },
 ];
 
 export const SEED_BOOK: SeedBook = {
   id: EXAMPLE_BOOK_ID,
-  title: "The Anjum & Cooper Table",
+  title: "The Fam",
   ownerId: USER_PREVIEW,
   draftKey: null,
   isExample: true,
@@ -91,6 +92,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_NAN,
     title: "Friday Pan-Seared Salmon & Herbed Couscous",
     handedDownBy: "Nan",
+    recipeBy: "Nani",
     course: "mains",
     minutes: 35,
     servings: 4,
@@ -122,6 +124,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_SAM,
     title: "Torched Meyer Lemon Meringue Tart",
     handedDownBy: "Auntie Claire",
+    recipeBy: "Auntie Claire",
     course: "sweets",
     minutes: 50,
     servings: 8,
@@ -152,6 +155,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_NAN,
     title: "Slow-Simmered Cardamom Kheer",
     handedDownBy: "Dadi",
+    recipeBy: "Dadi",
     course: "sweets",
     minutes: 45,
     servings: 6,
@@ -182,6 +186,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_COOP,
     title: "Sunday Seeded Country Sourdough",
     handedDownBy: "Uncle Tom",
+    recipeBy: "Uncle Tom",
     course: "bakes",
     minutes: 240,
     servings: 8,
@@ -212,6 +217,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_NAN,
     title: "Eid Chicken Pilaf",
     handedDownBy: "Nan",
+    recipeBy: "Nani",
     course: "mains",
     minutes: 70,
     servings: 8,
@@ -242,6 +248,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_COOP,
     title: "Grilled Chicken with Creamed Greens",
     handedDownBy: "Uncle Tom",
+    recipeBy: "Uncle Tom",
     course: "mains",
     minutes: 45,
     servings: 4,
@@ -272,6 +279,7 @@ export const SEED_RECIPES: SeedRecipe[] = [
     kitchenId: KITCHEN_SAM,
     title: "Cucumber and Mint Raita",
     handedDownBy: "Leila",
+    recipeBy: "Leila",
     course: "sides",
     minutes: 15,
     servings: 6,

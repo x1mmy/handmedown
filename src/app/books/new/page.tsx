@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-
 import { NewBookForm } from "@/components/new-book-form";
 import { loadContext } from "@/server/load";
 
@@ -7,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewBookPage() {
   const { principal } = await loadContext();
-  if (!principal.userId) redirect("/sign-in?next=/books/new");
+  void principal;
   return (
     <main className="mx-auto max-w-lg px-4 py-12">
       <p className="micro">New book</p>

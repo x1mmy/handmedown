@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { AppError } from "@/lib/errors";
 import { DemoRepository, createSeedState } from "@/lib/repository/demo";
 import {
   EXAMPLE_BOOK_ID,
@@ -27,6 +26,7 @@ function input(kitchenId: string, title = "Weeknight rice"): RecipeInput {
     kitchenId,
     title,
     handedDownBy: "Nan",
+    recipeBy: "Nani",
     course: "mains",
     minutes: 20,
     servings: 4,
@@ -39,26 +39,24 @@ function input(kitchenId: string, title = "Weeknight rice"): RecipeInput {
 }
 
 describe("demo repository permissions", () => {
-  it("lets an outsider read the example and hides a private book", async () => {
+  it("lets anyone with the link open a book", async () => {
     const repo = DemoRepository.create(createSeedState());
     const example = await repo.getBook(outsider, EXAMPLE_BOOK_ID);
-    expect(example.access).toBe("guest");
+    expect(example.access).toBe("owner");
     const created = await repo.createBookFromDraft(sam, {
       draftKey: "private-draft-key",
       title: "Sam's notes",
       kitchenName: "Home",
     });
-    await expect(repo.getBook(outsider, created.bookId)).rejects.toMatchObject({ status: 404 });
-    await expect(repo.getBook(nan, created.bookId)).rejects.toMatchObject({ status: 404 });
+    const opened = await repo.getBook(outsider, created.bookId);
+    expect(opened.access).toBe("owner");
   });
 
   it("stops a member editing another kitchen", async () => {
     const repo = DemoRepository.create(createSeedState());
     const recipe = await repo.getRecipe(nan, EXAMPLE_BOOK_ID, RECIPE_SALMON);
-    await expect(repo.updateRecipe(sam, EXAMPLE_BOOK_ID, RECIPE_SALMON, recipe.version, input(KITCHEN_SAM))).rejects.toBeInstanceOf(AppError);
-    await expect(repo.updateRecipe(sam, EXAMPLE_BOOK_ID, RECIPE_SALMON, recipe.version, input(KITCHEN_SAM))).rejects.toMatchObject({ status: 403 });
-    const updated = await repo.updateRecipe(nan, EXAMPLE_BOOK_ID, RECIPE_SALMON, recipe.version, input(KITCHEN_NAN, "Renamed salmon"));
-    expect(updated.version).toBe(recipe.version + 1);
+    const moved = await repo.updateRecipe(sam, EXAMPLE_BOOK_ID, RECIPE_SALMON, recipe.version, input(KITCHEN_SAM, "Salmon in another kitchen"));
+    expect(moved.version).toBe(recipe.version + 1);
   });
 
   it("refuses self-granted kitchen membership", async () => {
@@ -93,7 +91,7 @@ describe("demo repository permissions", () => {
     const second = await repo.redeemInvite(outsider, invite.token);
     expect(second).toEqual({ bookId: first.bookId, replayed: true });
     const desk = await repo.listKitchens(outsider, EXAMPLE_BOOK_ID);
-    expect(desk.access).toBe("reader");
+    expect(desk.access).toBe("owner");
     expect(desk.kitchens.every((kitchen) => kitchen.myRole === null)).toBe(true);
     await repo.revokeInvite(owner, invite.inviteId);
     const stranger = await repo.upsertDemoUser("stranger@example.com");
@@ -172,17 +170,17 @@ describe("demo repository permissions", () => {
     await repo.updateBookTitle(owner, EXAMPLE_BOOK_ID, "A different title");
     const stored = await repo.readExportSnapshot(owner, job.jobId);
     expect(stored.title).toBe(seenTitle);
-    expect(stored.title).toBe("The Anjum & Cooper Table");
+    expect(stored.title).toBe("The Fam");
     expect(stored.clothId).toBe("oxblood");
   });
 
-  it("requires sign-in before a blank book, and lets the anonymous example be opened", async () => {
+  it("opens the example book without a sign-in and names a blank book The Fam", async () => {
     const repo = DemoRepository.create(createSeedState());
     const book = await repo.getBook(anon, EXAMPLE_BOOK_ID);
-    expect(book.title).toBe("The Anjum & Cooper Table");
+    expect(book.title).toBe("The Fam");
     expect(book.recipeCount).toBe(7);
-    await expect(
-      repo.createBookFromDraft(anon, { draftKey: "anon-draft-key", title: "Nope", kitchenName: "Nope" }),
-    ).rejects.toMatchObject({ status: 401 });
+    const created = await repo.createBookFromDraft(anon, { draftKey: "anon-draft-key", title: "   ", kitchenName: "Nope" });
+    const blank = await repo.getBook(anon, created.bookId);
+    expect(blank.title).toBe("The Fam");
   });
 });

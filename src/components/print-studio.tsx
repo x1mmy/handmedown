@@ -49,7 +49,7 @@ export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: Ex
         <p className="micro">A5 bound book export</p>
         <h3 className="mt-1 font-serif text-2xl font-normal">Print configuration</h3>
         <p className="micro mt-4">Bookcloth linen cover</p>
-        <div className="mt-2 flex gap-2.5">
+        <div className="mt-2 flex flex-wrap gap-2.5">
           {COVER_CLOTHS.map((cloth) => (
             <button
               key={cloth.id}

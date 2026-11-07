@@ -5,6 +5,8 @@ import { dataAdapter } from "@/lib/config";
 import { isAppError } from "@/lib/errors";
 import { getDemoRepository } from "@/lib/repository/demo";
 import { getRepository } from "@/lib/repository";
+import { contentDispositionAttachment } from "@/lib/content-disposition";
+import { rateLimit } from "@/lib/rate-limit";
 import { renderSnapshotPdf } from "@/lib/print/pdf-worker";
 import type { CoverId, RecipeInput } from "@/lib/types";
 import { COVER_CLOTHS } from "@/lib/types";
@@ -36,9 +38,14 @@ function isCover(value: string): value is CoverId {
 
 async function dispatch(request: Request, slug: string[]): Promise<Response> {
   const method = request.method;
+  const [a, b, c, d, e] = slug;
+  if (method !== "GET" && method !== "HEAD") {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+    const limit = rateLimit(`${ip}:${a ?? ""}:${method}`);
+    if (!limit.ok) return json({ message: "Slow down and try again" }, 429);
+  }
   const principal = await getPrincipal();
   const repo = getRepository();
-  const [a, b, c, d, e] = slug;
 
   if (a === "auth" && b === "demo" && method === "POST") {
     if (dataAdapter() !== "demo") return json({ message: "Demo sign-in is off" }, 400);
@@ -104,6 +111,12 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
   if (a === "books" && b && c === "kitchens" && !d && method === "POST") {
     const body = await readJson<{ name: string }>(request);
     return json(await repo.createKitchen(principal, b, body.name), 201);
+  }
+
+  if (a === "books" && b && c === "kitchens" && d && !e && method === "PATCH") {
+    const body = await readJson<{ name: string }>(request);
+    await repo.updateKitchenName(principal, b, d, body.name);
+    return json({ ok: true, name: body.name });
   }
 
   if (a === "books" && b && c === "kitchens" && d && !e && method === "DELETE") {
@@ -191,7 +204,7 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
       status: 200,
       headers: {
         "content-type": "application/pdf",
-        "content-disposition": `attachment; filename="${file.filename.replaceAll('"', "")}"`,
+        "content-disposition": contentDispositionAttachment(file.filename),
       },
     });
   }

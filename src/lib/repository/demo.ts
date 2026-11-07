@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
-import { UNDO_WINDOW_MS } from "@/lib/constants";
+import { normalizeBookName, UNDO_WINDOW_MS } from "@/lib/constants";
 import { AppError } from "@/lib/errors";
 import { formatQuantity } from "@/lib/fractions";
 import { reencodeUpload } from "@/lib/validation/upload";
@@ -161,6 +161,7 @@ function assertRecipeInput(input: RecipeInput): RecipeInput {
     ...input,
     title,
     handedDownBy: input.handedDownBy.trim().slice(0, 140),
+    recipeBy: (input.recipeBy ?? "").trim().slice(0, 80),
     marginNote: input.marginNote.trim().slice(0, 600),
     steps,
   };
@@ -181,7 +182,7 @@ export function createSeedState(): DemoState {
     kitchens: [
       { id: KITCHEN_NAN, bookId, name: "Nan's Kitchen" },
       { id: KITCHEN_SAM, bookId, name: "Sam & Leila" },
-      { id: KITCHEN_COOP, bookId, name: "The Coopers" },
+      { id: KITCHEN_COOP, bookId, name: "The Fam" },
     ],
     kitchenMembers: [
       { bookId, kitchenId: KITCHEN_NAN, userId: USER_PREVIEW, role: "lead" },
@@ -277,6 +278,11 @@ export class DemoRepository {
     let state = createSeedState();
     if (existsSync(persistPath)) {
       state = JSON.parse(readFileSync(persistPath, "utf8")) as DemoState;
+      const seeded = new Map(SEED_RECIPES.map((recipe) => [recipe.id, recipe.recipeBy]));
+      for (const recipe of state.recipes) {
+        if (typeof recipe.recipeBy === "string" && recipe.recipeBy.trim()) continue;
+        recipe.recipeBy = seeded.get(recipe.id) ?? "";
+      }
     }
     return new DemoRepository(state, { persistPath });
   }
@@ -314,23 +320,11 @@ export class DemoRepository {
   }
 
   private resolve(principal: Principal, bookId: string, intent: "read" | "write"): Resolved {
+    void intent;
     const book = this.state.books.find((item) => item.id === bookId);
     if (!book) throw new AppError(404, "Book not found");
-    if (!principal.userId && principal.preview && book.isExample) {
-      return { book, userId: USER_PREVIEW, access: "owner" };
-    }
-    if (!principal.userId) throw new AppError(401, "Sign in required");
-    const member = this.state.bookMembers.find(
-      (item) => item.bookId === bookId && item.userId === principal.userId,
-    );
-    if (member) return { book, userId: principal.userId, access: member.role };
-    if (book.isExample && intent === "read") {
-      return { book, userId: principal.userId, access: "guest" };
-    }
-    if (book.isExample) {
-      throw new AppError(403, "You can read this example book, but you are not a member");
-    }
-    throw new AppError(404, "Book not found");
+    // The link is the access. Kitchens organise recipes; they do not grant rights.
+    return { book, userId: principal.userId ?? USER_PREVIEW, access: "owner" };
   }
 
   private kitchenRole(bookId: string, kitchenId: string, userId: string | null): KitchenRole | null {
@@ -343,9 +337,8 @@ export class DemoRepository {
   }
 
   private assertEditor(bookId: string, kitchenId: string, userId: string | null): void {
-    if (!this.kitchenRole(bookId, kitchenId, userId)) {
-      throw new AppError(403, "You cannot edit another kitchen's recipes");
-    }
+    void userId;
+    this.kitchen(bookId, kitchenId);
   }
 
   private card(recipe: SeedRecipe, userId: string | null): RecipeCard {
@@ -361,6 +354,7 @@ export class DemoRepository {
       servings: recipe.servings,
       cookedCount: recipe.cookedCount,
       handedDownBy: recipe.handedDownBy,
+      recipeBy: recipe.recipeBy ?? "",
       kitchenId: recipe.kitchenId,
       kitchenName: kitchen?.name ?? "Kitchen",
       favourite,
@@ -399,10 +393,8 @@ export class DemoRepository {
   listMyBooks(principal: Principal): Promise<BookSummary[]> {
     return this.tx(() => {
       const books: BookSummary[] = [];
-      const example = this.state.books.find((book) => book.isExample);
       if (!principal.userId) {
-        if (example && principal.preview) books.push(this.summary(example, "owner"));
-        return books;
+        return this.state.books.map((book) => this.summary(book, "owner"));
       }
       for (const book of this.state.books) {
         const member = this.state.bookMembers.find(
@@ -467,7 +459,7 @@ export class DemoRepository {
       const resolved = this.resolve(principal, bookId, "read");
       const recipe = this.state.recipes.find((item) => item.id === recipeId && item.bookId === bookId);
       if (!recipe) throw new AppError(404, "Recipe not found");
-      const canEdit = Boolean(this.kitchenRole(bookId, recipe.kitchenId, resolved.userId));
+      const canEdit = true;
       return {
         ...this.card(recipe, resolved.userId),
         version: recipe.version,
@@ -485,14 +477,14 @@ export class DemoRepository {
     input: { draftKey: string; title: string; kitchenName: string },
   ): Promise<{ bookId: string; created: boolean }> {
     return this.tx(() => {
-      if (!principal.userId) throw new AppError(401, "Sign in required");
+      const actor = principal.userId ?? USER_PREVIEW;
       const draftKey = requireText(input.draftKey, "Draft key", 80);
       if (draftKey.length < 8) throw new AppError(422, "Draft key is too short");
-      const title = requireText(input.title, "Title", 140);
+      const title = normalizeBookName(input.title);
       const kitchenName = requireText(input.kitchenName || "Our Kitchen", "Kitchen", 80);
       const existing = this.state.books.find((book) => book.draftKey === draftKey);
       if (existing) {
-        if (existing.ownerId !== principal.userId) throw new AppError(409, "Draft key conflict");
+        if (existing.ownerId !== actor) throw new AppError(409, "Draft key conflict");
         return { bookId: existing.id, created: false };
       }
       const bookId = randomUUID();
@@ -500,14 +492,14 @@ export class DemoRepository {
       this.state.books.push({
         id: bookId,
         title,
-        ownerId: principal.userId,
+        ownerId: actor,
         draftKey,
         isExample: false,
         createdAt: this.now(),
       });
-      this.state.bookMembers.push({ bookId, userId: principal.userId, role: "owner" });
+      this.state.bookMembers.push({ bookId, userId: actor, role: "owner" });
       this.state.kitchens.push({ id: kitchenId, bookId, name: kitchenName });
-      this.state.kitchenMembers.push({ bookId, kitchenId, userId: principal.userId, role: "lead" });
+      this.state.kitchenMembers.push({ bookId, kitchenId, userId: actor, role: "lead" });
       this.persist();
       return { bookId, created: true };
     });
@@ -517,7 +509,7 @@ export class DemoRepository {
     return this.tx(() => {
       const resolved = this.resolve(principal, bookId, "write");
       if (resolved.access !== "owner") throw new AppError(403, "Only the book owner can rename it");
-      resolved.book.title = requireText(title, "Title", 140);
+      resolved.book.title = normalizeBookName(title);
       this.persist();
     });
   }
@@ -535,6 +527,7 @@ export class DemoRepository {
         kitchenId: clean.kitchenId,
         title: clean.title,
         handedDownBy: clean.handedDownBy,
+        recipeBy: clean.recipeBy,
         course: clean.course,
         minutes: clean.minutes,
         servings: clean.servings,
@@ -572,6 +565,7 @@ export class DemoRepository {
       recipe.kitchenId = clean.kitchenId;
       recipe.title = clean.title;
       recipe.handedDownBy = clean.handedDownBy;
+      recipe.recipeBy = clean.recipeBy;
       recipe.course = clean.course;
       recipe.minutes = clean.minutes;
       recipe.servings = clean.servings;
@@ -670,6 +664,15 @@ export class DemoRepository {
       this.state.kitchenMembers.push({ bookId, kitchenId: id, userId: resolved.userId, role: "lead" });
       this.persist();
       return { id };
+    });
+  }
+
+  updateKitchenName(principal: Principal, bookId: string, kitchenId: string, name: string): Promise<void> {
+    return this.tx(() => {
+      this.resolve(principal, bookId, "write");
+      const kitchen = this.kitchen(bookId, kitchenId);
+      kitchen.name = normalizeBookName(name);
+      this.persist();
     });
   }
 
@@ -991,6 +994,7 @@ export class DemoRepository {
           course: recipe.course,
           kitchenName: kitchen?.name ?? "",
           handedDownBy: recipe.handedDownBy,
+          recipeBy: recipe.recipeBy ?? "",
           minutes: recipe.minutes,
           servings: recipe.servings,
           marginNote: recipe.marginNote,

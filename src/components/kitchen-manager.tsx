@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { InlineName } from "@/components/book-controls";
 import { PushRow, tween } from "@/components/motion";
 import type { KitchenDesk } from "@/lib/types";
 
@@ -45,7 +46,24 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
       {desk.kitchens.map((kitchen) => (
         <section key={kitchen.id} className="border border-rule bg-sheet p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h3 className="font-serif text-2xl font-normal">{kitchen.name}</h3>
+            <h3 className="min-w-0 font-serif text-2xl font-normal">
+              <InlineName
+                value={kitchen.name}
+                label={`Kitchen name for ${kitchen.name}`}
+                displayClass="font-serif text-2xl font-normal"
+                save={async (next) => {
+                  const response = await fetch(`/api/books/${bookId}/kitchens/${kitchen.id}`, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ name: next }),
+                  });
+                  if (!response.ok) {
+                    const body = (await response.json().catch(() => ({}))) as { message?: string };
+                    throw new Error(body.message || "Could not rename the kitchen");
+                  }
+                }}
+              />
+            </h3>
             <p className="micro">{kitchen.myRole ? `You are ${kitchen.myRole}` : "Not your kitchen"} · {kitchen.contentCount} attached</p>
           </div>
           <ul className="mt-3 divide-y divide-rule border-y border-rule">
@@ -136,7 +154,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
         <section className="border border-rule p-5">
           <h3 className="font-serif text-2xl font-normal">Add a kitchen</h3>
           <div className="mt-3 flex flex-wrap gap-2">
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen name" className="min-h-11 flex-1 border-b border-ink bg-transparent" />
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Kitchen name" aria-label="New kitchen name" className="min-h-11 min-w-0 flex-1 border-b border-ink bg-transparent text-base" />
             <button
               type="button"
               className={solid}

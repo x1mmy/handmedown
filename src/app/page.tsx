@@ -38,11 +38,6 @@ export default async function HomePage() {
         <Link href="/books/new" className={solidClass()}>
           Start a book
         </Link>
-        {!principal.userId ? (
-          <Link href="/sign-in?next=/books/new" className={lineClass()}>
-            Sign in
-          </Link>
-        ) : null}
       </div>
     </main>
   );

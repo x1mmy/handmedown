@@ -6,7 +6,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-page border-t border-rule pt-4">
         <a
           href={STASH_LABS_URL}
-          className="text-[11px] tracking-[0.14em] text-inkmuted [font-variant-caps:all-small-caps]"
+          className="inline-flex min-h-11 items-center text-[11px] tracking-[0.14em] text-inkmuted [font-variant-caps:all-small-caps]"
         >
           {FOOTER_TEXT}
         </a>

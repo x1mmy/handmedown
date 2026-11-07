@@ -43,6 +43,7 @@ export type RecipeCard = {
   servings: number;
   cookedCount: number;
   handedDownBy: string;
+  recipeBy: string;
   kitchenId: string;
   kitchenName: string;
   favourite: boolean;
@@ -64,6 +65,7 @@ export type RecipeInput = {
   kitchenId: string;
   title: string;
   handedDownBy: string;
+  recipeBy: string;
   course: Course;
   minutes: number;
   servings: number;
@@ -139,6 +141,7 @@ export type ExportSnapshot = {
     course: string;
     kitchenName: string;
     handedDownBy: string;
+    recipeBy: string;
     minutes: number;
     servings: number;
     marginNote: string;

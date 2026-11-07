@@ -41,9 +41,9 @@ export function NewBookForm() {
   return (
     <form onSubmit={(event) => void submit(event)} className="mt-6">
       <label className="micro" htmlFor="book-title">Book title</label>
-      <input id="book-title" required value={title} onChange={(event) => setTitle(event.target.value)} className="mb-4 mt-1 w-full border-b border-ink bg-transparent py-2" />
+      <input id="book-title" required value={title} onChange={(event) => setTitle(event.target.value)} className="mb-4 mt-1 min-h-11 w-full border-b border-ink bg-transparent py-2 text-base" />
       <label className="micro" htmlFor="kitchen-name">First kitchen</label>
-      <input id="kitchen-name" required value={kitchenName} onChange={(event) => setKitchenName(event.target.value)} className="mt-1 w-full border-b border-ink bg-transparent py-2" />
+      <input id="kitchen-name" required value={kitchenName} onChange={(event) => setKitchenName(event.target.value)} className="mt-1 min-h-11 w-full border-b border-ink bg-transparent py-2 text-base" />
       {error ? <p className="mt-3 text-sm text-accent">{error}</p> : null}
       <button type="submit" disabled={!draftKey} className="mt-6 inline-flex min-h-11 items-center border border-ink bg-ink px-5 text-[12px] uppercase tracking-[0.08em] text-sheet disabled:opacity-50">
         Create book

@@ -23,6 +23,8 @@ export function AlbumBrowser({
   const [caption, setCaption] = useState("");
   const [kitchenId, setKitchenId] = useState(kitchens[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [freshId, setFreshId] = useState<string | null>(null);
   const reduce = useReducedMotion();
   const visible = albumId === "all" ? albums.flatMap((album) => album.photos.map((photo) => ({ ...photo, album: album.name }))) : albums.find((album) => album.id === albumId)?.photos.map((photo) => ({ ...photo, album: albums.find((item) => item.id === albumId)?.name ?? "" })) ?? [];
@@ -30,25 +32,31 @@ export function AlbumBrowser({
 
   async function createAlbum() {
     setError(null);
-    const response = await fetch(`/api/books/${bookId}/albums`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    const body = (await response.json()) as { message?: string; id?: string };
-    if (!response.ok) {
-      setError(body.message ?? "Could not create the album");
-      return;
+    try {
+      const response = await fetch(`/api/books/${bookId}/albums`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await response.json()) as { message?: string; id?: string };
+      if (!response.ok) {
+        setError(body.message ?? "Could not create the album");
+        return;
+      }
+      setName("");
+      if (body.id) setAlbumId(body.id);
+      router.refresh();
+    } catch {
+      setError("The album was not created. Check the connection and retry.");
     }
-    setName("");
-    if (body.id) setAlbumId(body.id);
-    router.refresh();
   }
 
   async function upload(file: File) {
     setError(null);
+    setPendingFile(file);
     const target = albumId === "all" ? albums[0]?.id : albumId;
     if (!target) {
+      setStatus("Failed");
       setError("Name an album before adding photos");
       return;
     }
@@ -57,15 +65,24 @@ export function AlbumBrowser({
     form.set("albumId", target);
     form.set("caption", caption);
     if (kitchenId) form.set("kitchenId", kitchenId);
-    const response = await fetch(`/api/books/${bookId}/media`, { method: "POST", body: form });
-    const body = (await response.json().catch(() => ({}))) as { message?: string; photoId?: string };
-    if (!response.ok) {
-      setError(body.message ?? "Unsafe upload rejected");
-      return;
+    setStatus("Uploading…");
+    try {
+      const response = await fetch(`/api/books/${bookId}/media`, { method: "POST", body: form });
+      const body = (await response.json().catch(() => ({}))) as { message?: string; photoId?: string };
+      if (!response.ok) {
+        setStatus("Failed");
+        setError(body.message ?? "Unsafe upload rejected");
+        return;
+      }
+      if (body.photoId) setFreshId(body.photoId);
+      setCaption("");
+      setPendingFile(null);
+      setStatus(null);
+      router.refresh();
+    } catch {
+      setStatus("Failed");
+      setError("The photograph was not saved. Check the connection and retry.");
     }
-    if (body.photoId) setFreshId(body.photoId);
-    setCaption("");
-    router.refresh();
   }
 
   return (
@@ -90,7 +107,6 @@ export function AlbumBrowser({
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void upload(file);
-              event.target.value = "";
             }}
           />
         </label>
@@ -99,15 +115,15 @@ export function AlbumBrowser({
       <div className="mt-4 grid gap-3 desk:grid-cols-[1fr_1fr_auto] desk:items-end">
         <label className="block">
           <span className="micro">New album name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} className="w-full border-b border-ink bg-transparent py-2 outline-none" />
+          <input aria-label="New album name" value={name} onChange={(event) => setName(event.target.value)} className="min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent" />
         </label>
         <label className="block">
           <span className="micro">Caption for the next photo</span>
-          <input value={caption} onChange={(event) => setCaption(event.target.value)} className="w-full border-b border-ink bg-transparent py-2 outline-none" />
+          <input aria-label="Caption for the next photo" value={caption} onChange={(event) => setCaption(event.target.value)} className="min-h-11 w-full border-b border-ink bg-transparent py-2 text-base focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent" />
         </label>
         <div className="flex gap-2">
           {kitchens.length > 0 ? (
-            <select aria-label="Photo kitchen" value={kitchenId} onChange={(event) => setKitchenId(event.target.value)} className="min-h-11 border border-rule bg-sheet px-2">
+            <select aria-label="Photo kitchen" value={kitchenId} onChange={(event) => setKitchenId(event.target.value)} className="min-h-11 min-w-0 max-w-full border border-rule bg-sheet px-2 text-base">
               {kitchens.map((kitchen) => (
                 <option key={kitchen.id} value={kitchen.id}>
                   {kitchen.name}
@@ -120,7 +136,19 @@ export function AlbumBrowser({
           </button>
         </div>
       </div>
-      {error ? <p className="mt-3 text-sm text-accent">{error}</p> : null}
+      {status && status !== "Failed" ? <p className="mt-3 text-sm" role="status">{status}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm text-accent">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center border border-ink px-4 text-[12px] uppercase tracking-[0.08em] text-ink"
+            onClick={() => void (pendingFile ? upload(pendingFile) : createAlbum())}
+          >
+            Retry
+          </button>
+        </p>
+      ) : null}
 
       {visible.length === 0 ? (
         <p className="py-10 text-inksoft">This album is waiting for its first photograph.</p>
@@ -137,7 +165,7 @@ export function AlbumBrowser({
                   transition={reduce ? { duration: 0 } : tween(0.2)}
                 >
                   <span className="absolute -top-2 left-1/2 h-4 w-14 -translate-x-1/2 bg-[rgba(230,219,194,0.72)]" />
-                  <img src={photo.url} alt="" className="aspect-square w-full object-cover" />
+                  <img src={photo.url} alt={photo.caption || "Family photograph"} className="aspect-square w-full object-cover" />
                   <TypedCaption text={photo.caption} play={fresh} />
                   <p className="micro mt-1">{photo.meta}</p>
                 </motion.figure>
@@ -178,7 +206,7 @@ function TypedCaption({ text, play }: { text: string; play: boolean }) {
 }
 
 function tab(active: boolean) {
-  return `inline-flex min-h-11 items-center text-[12px] uppercase tracking-[0.08em] ${
+  return `inline-flex min-h-11 min-w-11 items-center justify-center text-[12px] uppercase tracking-[0.08em] ${
     active ? "font-semibold text-ink underline decoration-1 underline-offset-[6px]" : "text-inkmuted"
   }`;
 }
