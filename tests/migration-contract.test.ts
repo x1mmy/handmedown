@@ -2,47 +2,50 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { FOOTER_TEXT, STASH_LABS_URL } from "@/lib/constants";
+import { assertOfflinePrintHtml } from "@/lib/print/pdf-worker";
 
 const sql = readFileSync("supabase/migrations/20261107160000_hand_me_down.sql", "utf8");
 
 const tables = [
   "books",
-  "book_members",
   "kitchens",
-  "kitchen_members",
-  "kitchen_join_requests",
   "recipes",
   "recipe_favourites",
   "albums",
   "media_assets",
   "album_photos",
-  "book_invites",
   "cooking_events",
   "export_jobs",
 ];
 
 describe("migration contract", () => {
-  it("enables and forces RLS, with check policies, on every table", () => {
+  it("enables and forces RLS on every table and grants only service_role", () => {
     for (const table of tables) {
       expect(sql).toContain(`alter table public.${table} enable row level security`);
       expect(sql).toContain(`alter table public.${table} force row level security`);
-      expect(sql).toMatch(new RegExp(`create policy ${table}_update[\\s\\S]+?using \\([\\s\\S]+?with check \\(`, "i"));
     }
+    expect(sql).toContain("revoke all on all tables in schema public from public, anon, authenticated");
+    expect(sql).toContain("revoke all on all sequences in schema public from public, anon, authenticated");
+    expect(sql).toContain("revoke all on all functions in schema public from public, anon, authenticated");
+    expect(sql).toContain("grant all on all tables in schema public to service_role");
+    expect(sql).toContain("grant usage on schema private to service_role");
+    expect(sql).not.toContain("book_members");
+    expect(sql).not.toContain("auth.uid");
+    expect(sql).not.toContain("auth.role()");
+    expect(sql).not.toContain("to authenticated");
   });
 
-  it("keeps security definer functions in the private schema", () => {
-    const publicFns = sql.split("create or replace function public.");
-    publicFns.slice(1).forEach((body) => {
-      const head = body.slice(0, 240);
-      expect(head).toContain("security invoker");
-      expect(head).not.toContain("security definer");
-    });
-    expect(sql).toContain("security definer");
-    expect(sql).toContain("set search_path = ''");
-    expect(sql).toContain("token_hash");
-    expect(sql).toContain("idempotency_key");
+  it("seeds The Fam and a private media bucket without membership leftovers", () => {
+    expect(sql).toContain("'10000000-0000-4000-8000-000000000001', 'The Fam'");
+    expect(sql).toContain("on conflict (id) do nothing");
+    expect(sql).toContain("public = false");
+    expect(sql).toContain("10485760");
+    expect(sql).toContain("image/jpeg");
+    expect(sql).toContain("image/heic");
+    expect(sql).toContain("application/pdf");
     expect(sql).toContain("foreign key (book_id, kitchen_id) references public.kitchens (book_id, id)");
     expect(sql).not.toMatch(/references public\.kitchens \(book_id, id\) on delete cascade/i);
+    expect(sql).toContain("idempotency_key");
   });
 });
 
@@ -54,5 +57,13 @@ describe("footer credit", () => {
     expect(footer).toContain("STASH_LABS_URL");
     expect(footer).toContain("FOOTER_TEXT");
     expect(footer).not.toContain("TODO");
+  });
+});
+
+describe("print html", () => {
+  it("rejects network URLs", () => {
+    expect(() => assertOfflinePrintHtml("<img src='https://example.com/a.jpg'>")).toThrow(/network/);
+    expect(() => assertOfflinePrintHtml("background: url(//cdn.example/a.png)")).toThrow(/network/);
+    expect(() => assertOfflinePrintHtml("<h1>The Fam</h1>")).not.toThrow();
   });
 });

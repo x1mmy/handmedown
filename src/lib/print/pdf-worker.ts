@@ -5,11 +5,15 @@ import type { ExportSnapshot } from "@/lib/types";
  * Renders an immutable export snapshot to an A5 PDF.
  * The browser context aborts every network request. The HTML is self-contained.
  */
-export async function renderSnapshotPdf(snapshot: ExportSnapshot): Promise<Buffer> {
-  const html = renderPrintHtml(snapshot);
-  if (/https?:\/\//i.test(html)) {
+export function assertOfflinePrintHtml(html: string): void {
+  if (/https?:\/\//i.test(html) || /url\s*\(\s*['"]?\s*\/\//i.test(html)) {
     throw new Error("Print HTML must not reference network URLs");
   }
+}
+
+export async function renderSnapshotPdf(snapshot: ExportSnapshot): Promise<Buffer> {
+  const html = renderPrintHtml(snapshot);
+  assertOfflinePrintHtml(html);
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({
     headless: true,

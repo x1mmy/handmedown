@@ -16,4 +16,4 @@ export function normalizeBookName(raw: string): string {
   return trimmed || DEFAULT_BOOK_NAME;
 }
 
-export const MAX_UPLOAD_BYTES = 8_000_000;
+export const MAX_UPLOAD_BYTES = 10_000_000;

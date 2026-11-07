@@ -9,8 +9,8 @@ export function ExampleStrip() {
     <div className="border-b border-rule bg-paperwarm px-4 py-2 text-[13px] text-inksoft desk:px-6">
       <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-3">
         <span>Viewing the example family book</span>
-        <Link href="/books/new" className="inline-flex min-h-11 items-center border-b border-ink pb-px text-[12px] font-semibold uppercase tracking-[0.05em] text-ink">
-          Start our own book
+        <Link href="/" className="inline-flex min-h-11 items-center border-b border-ink pb-px text-[12px] font-semibold uppercase tracking-[0.05em] text-ink">
+          Open the book
         </Link>
       </div>
     </div>

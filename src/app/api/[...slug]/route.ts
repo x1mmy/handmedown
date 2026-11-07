@@ -1,11 +1,13 @@
-import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
 
 import { getPrincipal } from "@/lib/auth/principal";
-import { dataAdapter } from "@/lib/config";
-import { isAppError } from "@/lib/errors";
-import { getDemoRepository } from "@/lib/repository/demo";
+import { assertSharedBook } from "@/lib/book-scope";
+import { pdfExportEnabled } from "@/lib/config";
+import { AppError, isAppError } from "@/lib/errors";
 import { getRepository } from "@/lib/repository";
 import { contentDispositionAttachment } from "@/lib/content-disposition";
+import { beginExport } from "@/lib/export-guard";
+import { MAX_JSON_BYTES, MAX_UPLOAD_REQUEST_BYTES } from "@/lib/limits";
 import { rateLimit } from "@/lib/rate-limit";
 import { renderSnapshotPdf } from "@/lib/print/pdf-worker";
 import type { CoverId, RecipeInput } from "@/lib/types";
@@ -15,7 +17,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status });
+  return Response.json(body, { status, headers: { "x-content-type-options": "nosniff" } });
+}
+
+function clientIp(request: Request): string {
+  const vercel = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercel) return vercel.slice(0, 80);
+  const ip = (request as NextRequest & { ip?: string }).ip;
+  if (ip) return ip.slice(0, 80);
+  return "local";
+}
+
+function assertBodyLimit(request: Request, max: number): void {
+  const raw = request.headers.get("content-length");
+  if (!raw) throw new AppError(411, "Content-Length is required");
+  const size = Number(raw);
+  if (!Number.isFinite(size) || size < 0 || size > max) throw new AppError(413, "Request is too large");
 }
 
 function fail(error: unknown): Response {
@@ -39,37 +56,21 @@ function isCover(value: string): value is CoverId {
 async function dispatch(request: Request, slug: string[]): Promise<Response> {
   const method = request.method;
   const [a, b, c, d, e] = slug;
+  if (a === "auth" || a === "invites" || a === "join-requests" || c === "members" || c === "join-requests" || c === "invites") {
+    return json({ message: "Not found" }, 404);
+  }
+  const ip = clientIp(request);
   if (method !== "GET" && method !== "HEAD") {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
     const limit = rateLimit(`${ip}:${a ?? ""}:${method}`);
     if (!limit.ok) return json({ message: "Slow down and try again" }, 429);
+    assertBodyLimit(request, a === "books" && c === "media" ? MAX_UPLOAD_REQUEST_BYTES : MAX_JSON_BYTES);
   }
   const principal = await getPrincipal();
   const repo = getRepository();
-
-  if (a === "auth" && b === "demo" && method === "POST") {
-    if (dataAdapter() !== "demo") return json({ message: "Demo sign-in is off" }, 400);
-    const body = await readJson<{ email?: string }>(request);
-    const user = await getDemoRepository().upsertDemoUser(body.email ?? "");
-    const jar = await cookies();
-    jar.set("hmd_demo_uid", user.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
-    return json({ id: user.id, name: user.name });
-  }
-
-  if (a === "auth" && b === "sign-out" && method === "POST") {
-    const jar = await cookies();
-    jar.delete("hmd_demo_uid");
-    if (dataAdapter() === "supabase") {
-      const { createUserClient } = await import("@/lib/supabase/server");
-      const supabase = await createUserClient();
-      await supabase.auth.signOut();
-    }
-    return json({ ok: true });
-  }
+  if (a === "books" && b) assertSharedBook(b);
 
   if (a === "books" && !b && method === "POST") {
-    const body = await readJson<{ draftKey: string; title: string; kitchenName: string }>(request);
-    return json(await repo.createBookFromDraft(principal, body));
+    return json(await repo.createBookFromDraft(principal, { draftKey: "shared-book", title: "The Fam", kitchenName: "Our Kitchen" }));
   }
 
   if (a === "books" && b && c === "recipes" && !d && method === "POST") {
@@ -124,38 +125,6 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
     return json({ ok: true });
   }
 
-  if (a === "books" && b && c === "kitchens" && d && e === "members" && method === "POST") {
-    const body = await readJson<{ userId: string }>(request);
-    return json(await repo.grantKitchenMember(principal, b, d, body.userId));
-  }
-
-  if (a === "books" && b && c === "join-requests" && method === "POST") {
-    const body = await readJson<{ kitchenId: string }>(request);
-    return json(await repo.requestJoin(principal, b, body.kitchenId));
-  }
-
-  if (a === "join-requests" && b && c === "approve" && method === "POST") {
-    return json(await repo.approveJoin(principal, b));
-  }
-
-  if (a === "join-requests" && b && c === "reject" && method === "POST") {
-    return json(await repo.rejectJoin(principal, b));
-  }
-
-  if (a === "books" && b && c === "invites" && !d && method === "POST") {
-    return json(await repo.createInvite(principal, b), 201);
-  }
-
-  if (a === "invites" && b && c === "revoke" && method === "POST") {
-    await repo.revokeInvite(principal, b);
-    return json({ ok: true });
-  }
-
-  if (a === "invites" && b === "redeem" && method === "POST") {
-    const body = await readJson<{ token: string }>(request);
-    return json(await repo.redeemInvite(principal, body.token));
-  }
-
   if (a === "books" && b && c === "albums" && method === "POST") {
     const body = await readJson<{ name: string }>(request);
     return json(await repo.createAlbum(principal, b, body.name), 201);
@@ -187,15 +156,24 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
       headers: {
         "content-type": media.mime,
         "cache-control": "private, max-age=3600",
+        "x-content-type-options": "nosniff",
       },
     });
   }
 
   if (a === "books" && b && c === "exports" && method === "POST") {
+    if (!pdfExportEnabled()) {
+      return json({ message: "Use your browser's print dialog. This host cannot run the PDF worker." }, 422);
+    }
     const body = await readJson<{ clothId?: string; bleed?: boolean }>(request);
     const clothId = body.clothId && isCover(body.clothId) ? body.clothId : "olive";
-    const result = await repo.createExport(principal, b, { clothId, bleed: Boolean(body.bleed) }, renderSnapshotPdf);
-    return json(result, result.status === "ready" ? 201 : 422);
+    const finish = beginExport(ip);
+    try {
+      const result = await repo.createExport(principal, b, { clothId, bleed: Boolean(body.bleed) }, renderSnapshotPdf);
+      return json(result, result.status === "ready" ? 201 : 422);
+    } finally {
+      finish();
+    }
   }
 
   if (a === "exports" && b && method === "GET") {
@@ -205,6 +183,7 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
       headers: {
         "content-type": "application/pdf",
         "content-disposition": contentDispositionAttachment(file.filename),
+        "x-content-type-options": "nosniff",
       },
     });
   }

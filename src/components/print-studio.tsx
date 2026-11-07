@@ -7,7 +7,7 @@ import { tween } from "@/components/motion";
 import { paginate, type PrintPage } from "@/lib/print/paginate";
 import { COVER_CLOTHS, type CoverId, type ExportSnapshot } from "@/lib/types";
 
-export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: ExportSnapshot }) {
+export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: string; snapshot: ExportSnapshot; pdfEnabled?: boolean }) {
   const [clothId, setClothId] = useState<CoverId>(snapshot.clothId);
   const [bleed, setBleed] = useState(snapshot.bleed);
   const [spread, setSpread] = useState(0);
@@ -69,9 +69,18 @@ export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: Ex
         <p className="micro my-4">
           {pages.length} pages · {snapshot.recipes.length} recipes · A5 {bleed ? "154×216mm" : "148×210mm"}
         </p>
-        <button type="button" disabled={busy} onClick={() => void exportPdf()} className="flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink bg-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em] text-sheet disabled:opacity-50">
-          {busy ? "Rendering" : "Export print-ready A5 PDF"}
-        </button>
+        {pdfEnabled ? (
+          <button type="button" disabled={busy} onClick={() => void exportPdf()} className="flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink bg-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em] text-sheet disabled:opacity-50">
+            {busy ? "Rendering" : "Export print-ready A5 PDF"}
+          </button>
+        ) : (
+          <>
+            <p className="text-sm text-inksoft">PDF export needs Chromium, which this host does not run. Use your browser&apos;s print dialog on this preview.</p>
+            <button type="button" onClick={() => window.print()} className="mt-3 flex min-h-11 w-full min-w-0 items-center justify-center whitespace-normal border border-ink bg-ink px-3 text-center text-[12px] uppercase leading-snug tracking-[0.08em] text-sheet">
+              Print this preview
+            </button>
+          </>
+        )}
         {message ? <p className="mt-3 text-sm text-accent">{message}</p> : null}
         <div className="mt-4 flex w-full min-w-0 gap-2">
           <button type="button" className="min-h-11 flex-1 border border-rule" onClick={() => setSpread((value) => Math.max(0, value - 1))}>

@@ -11,9 +11,7 @@ import type { KitchenDesk } from "@/lib/types";
 export function KitchenManager({ bookId, desk }: { bookId: string; desk: KitchenDesk }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [invite, setInvite] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [asked, setAsked] = useState<string | null>(null);
   const reduce = useReducedMotion();
   const knownMembers = useRef<Set<string> | null>(null);
 
@@ -93,29 +91,6 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
             })}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2">
-            {!kitchen.myRole && desk.access !== "guest" ? (
-              <>
-                <button
-                  type="button"
-                  className={line}
-                  onClick={() =>
-                    void send(`/api/books/${bookId}/join-requests`, {
-                      method: "POST",
-                      body: JSON.stringify({ kitchenId: kitchen.id }),
-                    }).then((body) => {
-                      if (body) setAsked(kitchen.id);
-                    })
-                  }
-                >
-                  Ask to join
-                </button>
-                {asked === kitchen.id ? (
-                  <span role="status" className="text-sm">
-                    Request sent
-                  </span>
-                ) : null}
-              </>
-            ) : null}
             {desk.access === "owner" ? (
               <button
                 type="button"
@@ -126,27 +101,6 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
               </button>
             ) : null}
           </div>
-          {kitchen.pendingRequests.length > 0 ? (
-            <ul className="mt-4">
-              {kitchen.pendingRequests.map((request) => (
-                <li key={request.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-rule py-2">
-                  <span>{request.name} asked to join</span>
-                  <span className="flex gap-2">
-                    <button
-                      type="button"
-                      className={solid}
-                      onClick={() => void send(`/api/join-requests/${request.id}/approve`, { method: "POST" })}
-                    >
-                      Approve
-                    </button>
-                    <button type="button" className={line} onClick={() => void send(`/api/join-requests/${request.id}/reject`, { method: "POST" })}>
-                      Decline
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </section>
       ))}
 
@@ -163,36 +117,6 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
               Create kitchen
             </button>
           </div>
-          <h3 className="mt-8 font-serif text-2xl font-normal">Invites</h3>
-          <p className="mt-1 text-sm text-inksoft">An invite lets someone read the book. Joining a kitchen still needs approval.</p>
-          <button
-            type="button"
-            className={`${solid} mt-3`}
-            onClick={() =>
-              void send(`/api/books/${bookId}/invites`, { method: "POST" }).then((body) => {
-                if (body?.token && typeof window !== "undefined") {
-                  setInvite(`${window.location.origin}/invite/${body.token}`);
-                }
-              })
-            }
-          >
-            Create invite link
-          </button>
-          {invite ? <p className="mt-3 break-all text-sm">{invite}</p> : null}
-          <ul className="mt-4 divide-y divide-rule">
-            {desk.invites.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span>
-                  {item.revokedAt ? "Revoked" : item.redeemedByName ? `Redeemed by ${item.redeemedByName}` : "Open"}
-                </span>
-                {!item.revokedAt ? (
-                  <button type="button" className={line} onClick={() => void send(`/api/invites/${item.id}/revoke`, { method: "POST" })}>
-                    Revoke
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
         </section>
       ) : null}
     </div>

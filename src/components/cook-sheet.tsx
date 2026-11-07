@@ -156,10 +156,11 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
       setDeleted(true);
       setToast(`“${recipe.title}” moved to trash.`);
       clearUndoTimer();
+      const hideAt = performance.now() + undoToastRemaining(result.deletedAt, Date.now());
       undoTimer.current = window.setTimeout(() => {
         setToast(null);
         undoTimer.current = null;
-      }, undoToastRemaining(result.deletedAt, Date.now()));
+      }, Math.max(0, hideAt - performance.now()));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not delete this recipe");
     }

@@ -27,6 +27,11 @@ export function supabaseSecretKey(): string | null {
   return key && key.length > 0 ? key : null;
 }
 
+/** Chromium is not available on Vercel serverless. The print preview stays usable. */
+export function pdfExportEnabled(): boolean {
+  return process.env.VERCEL !== "1" && process.env.HMD_PDF_EXPORT !== "off";
+}
+
 export function assertSupabaseConfigured(): { url: string; publishableKey: string; secretKey: string } {
   const pub = supabasePublicEnv();
   const secretKey = supabaseSecretKey();

@@ -74,6 +74,20 @@ Pending until you opt in:
 - There is no login. A demo cookie is not accepted as a real book session.
 - Local Supabase RLS (`supabase start`) was not run in this environment. That integration check is blocked until Docker and the Supabase CLI are available. Do not apply the migration remotely.
 
+## Deploy on Vercel
+
+The hosted app is one shared book. The browser never talks to Postgres or Storage. Set these on the Vercel project, then apply `supabase/migrations/20261107160000_hand_me_down.sql` to a database you mean to use. Do not apply it to the remote project until that target is approved.
+
+| Name | Value |
+| --- | --- |
+| `HMD_DATA_ADAPTER` | `supabase` |
+| `NEXT_PUBLIC_SUPABASE_URL` | The project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The publishable key. The server checks that it is set. The browser does not use it to write. |
+| `SUPABASE_SECRET_KEY` | Server only. Table and private Storage access. |
+| `HMD_BOOK_ID` | Optional. Defaults to `10000000-0000-4000-8000-000000000001`, the seeded book titled The Fam. |
+
+PDF export uses Playwright and Chromium. Vercel serverless cannot run that worker, so when `VERCEL=1` the export button is replaced with the browser print dialog and the export endpoint returns a clear error. The on-screen A5 preview still works. `next build` externalizes `playwright` so the build does not need a browser.
+
 ## Footer
 
 Every page ends with the exact words “Built by Stash Labs”, set in small caps, linking to `STASH_LABS_URL` in `src/lib/constants.ts` (`https://www.stashlabs.com.au/`).

@@ -2,11 +2,15 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { randomUUID } from "node:crypto";
+
+import { assertSharedBook, sharedBookId } from "@/lib/book-scope";
 import { AppError } from "@/lib/errors";
 import { formatQuantity } from "@/lib/fractions";
 import { reencodeUpload } from "@/lib/validation/upload";
-import { assertSupabaseConfigured } from "@/lib/config";
-import { normalizeBookName } from "@/lib/constants";
+import { assertSupabaseConfigured, pdfExportEnabled } from "@/lib/config";
+import { normalizeBookName, UNDO_WINDOW_MS } from "@/lib/constants";
+import { MAX_ALBUMS, MAX_EMBEDDED_PHOTOS, MAX_KITCHENS, MAX_PHOTOS, MAX_RECIPES, MAX_SNAPSHOT_CHARS, SHARED_FAVOURITE_USER } from "@/lib/limits";
 import { assertCanonicalExportPath, assertCanonicalMediaPath, exportObjectPath, mediaObjectPath } from "@/lib/storage-path";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
@@ -38,12 +42,6 @@ function raise(error: DbError): void {
     throw new AppError(409, code === "23503" ? "Cross-book link rejected" : message);
   }
   throw new AppError(400, message);
-}
-
-async function rpc<T>(supabase: SupabaseClient, fn: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.rpc(fn, args);
-  raise(error);
-  return data as T;
 }
 
 function recipePayload(input: RecipeInput) {
@@ -85,51 +83,32 @@ export class SupabaseRepository {
   private async client(principal: Principal): Promise<{ supabase: SupabaseClient; userId: string }> {
     void principal;
     assertSupabaseConfigured();
-    return { supabase: createServiceClient(), userId: "00000000-0000-4000-8000-0000000000aa" };
+    return { supabase: createServiceClient(), userId: SHARED_FAVOURITE_USER };
   }
 
   async listMyBooks(principal: Principal): Promise<BookSummary[]> {
-    const { supabase, userId } = await this.client(principal);
-    const { data: books, error } = await supabase.from("books").select("id, title, is_example");
-    raise(error);
-    const { data: members, error: memberError } = await supabase
-      .from("book_members")
-      .select("book_id, role")
-      .eq("user_id", userId);
-    raise(memberError);
-    const { data: kitchens, error: kitchenError } = await supabase.from("kitchens").select("book_id");
-    raise(kitchenError);
-    const { data: recipes, error: recipeError } = await supabase.from("recipes").select("book_id, deleted_at");
-    raise(recipeError);
-    return (books ?? []).map((book) => {
-      const role = (members ?? []).find((member) => member.book_id === book.id)?.role;
-      return {
+    const book = await this.getBook(principal, sharedBookId());
+    return [
+      {
         id: book.id,
         title: book.title,
-        isExample: Boolean(book.is_example),
-        access: role === "owner" ? "owner" : "reader",
-        recipeCount: (recipes ?? []).filter((recipe) => recipe.book_id === book.id && !recipe.deleted_at).length,
-        kitchenCount: (kitchens ?? []).filter((kitchen) => kitchen.book_id === book.id).length,
-      } satisfies BookSummary;
-    });
+        isExample: book.isExample,
+        access: "owner",
+        recipeCount: book.recipeCount,
+        kitchenCount: book.kitchenCount,
+      },
+    ];
   }
 
   async getBook(principal: Principal, bookId: string): Promise<BookDetail> {
-    const { supabase, userId } = await this.client(principal);
+    assertSharedBook(bookId);
+    const { supabase } = await this.client(principal);
     const { data: book, error } = await supabase
       .from("books")
       .select("id, title, is_example")
       .eq("id", bookId)
       .maybeSingle();
     raise(error);
-    if (!book) throw new AppError(404, "Book not found");
-    const { data: member, error: memberError } = await supabase
-      .from("book_members")
-      .select("role")
-      .eq("book_id", bookId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    raise(memberError);
     if (!book) throw new AppError(404, "Book not found");
     const { data: kitchens, error: kitchenError } = await supabase
       .from("kitchens")
@@ -143,7 +122,6 @@ export class SupabaseRepository {
       .is("deleted_at", null);
     raise(countError);
     const access = "owner" as const;
-    void member;
     return {
       id: book.id,
       title: book.title,
@@ -174,6 +152,7 @@ export class SupabaseRepository {
     const { data: favs, error: favError } = await supabase
       .from("recipe_favourites")
       .select("recipe_id")
+      .eq("book_id", bookId)
       .eq("user_id", userId);
     raise(favError);
     const names = new Map((kitchens ?? []).map((kitchen) => [kitchen.id, kitchen.name]));
@@ -256,208 +235,272 @@ export class SupabaseRepository {
     principal: Principal,
     input: { draftKey: string; title: string; kitchenName: string },
   ): Promise<{ bookId: string; created: boolean }> {
+    void input;
+    const bookId = sharedBookId();
     const { supabase } = await this.client(principal);
-    const { data: existing, error } = await supabase
-      .from("books")
-      .select("id")
-      .eq("draft_key", input.draftKey)
-      .maybeSingle();
+    const { data: existing, error } = await supabase.from("books").select("id").eq("id", bookId).maybeSingle();
     raise(error);
-    const bookId = await rpc<string>(supabase, "create_book_from_draft", {
-      p_draft_key: input.draftKey,
-      p_title: input.title,
-      p_kitchen_name: input.kitchenName,
+    if (existing) return { bookId, created: false };
+    const inserted = await supabase.from("books").insert({ id: bookId, title: "The Fam", is_example: true });
+    raise(inserted.error);
+    const kitchen = await supabase.from("kitchens").insert({
+      id: "10000000-0000-4000-8000-000000000011",
+      book_id: bookId,
+      name: "Our Kitchen",
     });
-    return { bookId, created: !existing };
+    raise(kitchen.error);
+    return { bookId, created: true };
   }
 
   async updateBookTitle(principal: Principal, bookId: string, title: string): Promise<void> {
+    assertSharedBook(bookId);
     const { supabase } = await this.client(principal);
-    await rpc(supabase, "update_book_title", { p_book_id: bookId, p_title: normalizeBookName(title) });
+    const { data, error } = await supabase
+      .from("books")
+      .update({ title: normalizeBookName(title) })
+      .eq("id", bookId)
+      .select("id");
+    raise(error);
+    if (!data?.length) throw new AppError(404, "Book not found");
+  }
+
+  private async requireRecipe(supabase: SupabaseClient, bookId: string, recipeId: string): Promise<RecipeRow> {
+    assertSharedBook(bookId);
+    const { data, error } = await supabase.from("recipes").select("*").eq("id", recipeId).eq("book_id", bookId).maybeSingle();
+    raise(error);
+    if (!data) throw new AppError(404, "Recipe not found");
+    return data as RecipeRow;
   }
 
   async createRecipe(principal: Principal, bookId: string, input: RecipeInput): Promise<{ id: string }> {
+    assertSharedBook(bookId);
+    const book = await this.getBook(principal, bookId);
+    if (book.recipeCount >= MAX_RECIPES) throw new AppError(422, "This book has enough recipes");
+    if (!book.kitchens.some((kitchen) => kitchen.id === input.kitchenId)) throw new AppError(409, "Cross-book link rejected");
+    if (input.ingredients.length > 80 || input.steps.length > 40) throw new AppError(422, "That recipe is too long");
     const { supabase } = await this.client(principal);
-    const id = await rpc<string>(supabase, "create_recipe", {
-      p_book_id: bookId,
-      p_payload: recipePayload(input),
-    });
+    const id = randomUUID();
+    const { error } = await supabase.from("recipes").insert({ id, book_id: bookId, ...recipePayload(input), version: 1 });
+    raise(error);
     return { id };
   }
 
   async updateRecipe(
     principal: Principal,
-    _bookId: string,
+    bookId: string,
     recipeId: string,
     version: number,
     input: RecipeInput,
   ): Promise<{ version: number }> {
     const { supabase } = await this.client(principal);
-    const next = await rpc<number>(supabase, "update_recipe", {
-      p_recipe_id: recipeId,
-      p_version: version,
-      p_patch: recipePayload(input),
-    });
+    const current = await this.requireRecipe(supabase, bookId, recipeId);
+    if (! (await this.getBook(principal, bookId)).kitchens.some((kitchen) => kitchen.id === input.kitchenId)) {
+      throw new AppError(409, "Cross-book link rejected");
+    }
+    if (current.version !== version) throw new AppError(409, "Someone else saved this recipe");
+    const next = version + 1;
+    const { data, error } = await supabase
+      .from("recipes")
+      .update({ ...recipePayload(input), version: next, updated_at: new Date().toISOString() })
+      .eq("id", recipeId)
+      .eq("book_id", bookId)
+      .eq("version", version)
+      .select("version");
+    raise(error);
+    if (!data?.length) throw new AppError(409, "Someone else saved this recipe");
     return { version: next };
   }
 
-  async softDeleteRecipe(principal: Principal, _bookId: string, recipeId: string): Promise<{ deletedAt: number }> {
+  async softDeleteRecipe(principal: Principal, bookId: string, recipeId: string): Promise<{ deletedAt: number }> {
     const { supabase } = await this.client(principal);
-    const deletedAt = await rpc<string>(supabase, "soft_delete_recipe", { p_recipe_id: recipeId });
-    const parsed = Date.parse(deletedAt);
-    if (!Number.isFinite(parsed)) throw new AppError(500, "Delete did not return a database time");
-    return { deletedAt: parsed };
+    await this.requireRecipe(supabase, bookId, recipeId);
+    const deletedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("recipes")
+      .update({ deleted_at: deletedAt })
+      .eq("id", recipeId)
+      .eq("book_id", bookId)
+      .is("deleted_at", null)
+      .select("deleted_at");
+    raise(error);
+    const stamp = data?.[0]?.deleted_at ? Date.parse(data[0].deleted_at) : Date.parse(deletedAt);
+    if (!Number.isFinite(stamp)) throw new AppError(500, "Delete did not return a database time");
+    return { deletedAt: stamp };
   }
 
-  async undoDeleteRecipe(principal: Principal, _bookId: string, recipeId: string): Promise<void> {
+  async undoDeleteRecipe(principal: Principal, bookId: string, recipeId: string): Promise<void> {
     const { supabase } = await this.client(principal);
-    await rpc(supabase, "undo_delete_recipe", { p_recipe_id: recipeId });
+    const recipe = await this.requireRecipe(supabase, bookId, recipeId);
+    const deletedAt = recipe.deleted_at ? Date.parse(recipe.deleted_at) : NaN;
+    if (!Number.isFinite(deletedAt) || Date.now() > deletedAt + UNDO_WINDOW_MS) {
+      throw new AppError(409, "Undo window has closed");
+    }
+    const { error } = await supabase.from("recipes").update({ deleted_at: null }).eq("id", recipeId).eq("book_id", bookId);
+    raise(error);
   }
 
-  async setFavourite(principal: Principal, _bookId: string, recipeId: string, on: boolean): Promise<void> {
-    const { supabase } = await this.client(principal);
-    await rpc(supabase, "set_favourite", { p_recipe_id: recipeId, p_on: on });
+  async setFavourite(principal: Principal, bookId: string, recipeId: string, on: boolean): Promise<void> {
+    const { supabase, userId } = await this.client(principal);
+    await this.requireRecipe(supabase, bookId, recipeId);
+    if (on) {
+      const { error } = await supabase.from("recipe_favourites").upsert(
+        { book_id: bookId, recipe_id: recipeId, user_id: userId },
+        { onConflict: "recipe_id,user_id" },
+      );
+      raise(error);
+      return;
+    }
+    const { error } = await supabase.from("recipe_favourites").delete().eq("book_id", bookId).eq("recipe_id", recipeId).eq("user_id", userId);
+    raise(error);
   }
 
   async incrementCooked(
     principal: Principal,
-    _bookId: string,
+    bookId: string,
     recipeId: string,
     idempotencyKey: string,
   ): Promise<{ cookedCount: number; applied: boolean }> {
-    const { supabase } = await this.client(principal);
-    const row = await rpc<{ cooked_count: number; applied: boolean }>(supabase, "increment_cooked", {
-      p_recipe_id: recipeId,
-      p_key: idempotencyKey,
+    const key = idempotencyKey.trim().slice(0, 80);
+    if (!key) throw new AppError(422, "Missing cook key");
+    const { supabase, userId } = await this.client(principal);
+    const recipe = await this.requireRecipe(supabase, bookId, recipeId);
+    const inserted = await supabase.from("cooking_events").insert({
+      book_id: bookId,
+      recipe_id: recipeId,
+      user_id: userId,
+      idempotency_key: key,
     });
-    return { cookedCount: row.cooked_count, applied: row.applied };
+    if (inserted.error?.code === "23505") return { cookedCount: recipe.cooked_count, applied: false };
+    raise(inserted.error);
+    const next = recipe.cooked_count + 1;
+    const { error } = await supabase.from("recipes").update({ cooked_count: next }).eq("id", recipeId).eq("book_id", bookId);
+    raise(error);
+    return { cookedCount: next, applied: true };
   }
 
   async createKitchen(principal: Principal, bookId: string, name: string): Promise<{ id: string }> {
+    const book = await this.getBook(principal, bookId);
+    if (book.kitchenCount >= MAX_KITCHENS) throw new AppError(422, "This book has enough kitchens");
     const { supabase } = await this.client(principal);
-    const id = await rpc<string>(supabase, "create_kitchen", { p_book_id: bookId, p_name: name });
+    const id = randomUUID();
+    const { error } = await supabase.from("kitchens").insert({ id, book_id: bookId, name: normalizeBookName(name) });
+    raise(error);
     return { id };
   }
 
   async updateKitchenName(principal: Principal, bookId: string, kitchenId: string, name: string): Promise<void> {
+    assertSharedBook(bookId);
     const { supabase } = await this.client(principal);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("kitchens")
       .update({ name: normalizeBookName(name) })
       .eq("id", kitchenId)
-      .eq("book_id", bookId);
+      .eq("book_id", bookId)
+      .select("id");
     raise(error);
+    if (!data?.length) throw new AppError(404, "Kitchen not found");
   }
 
-  async deleteKitchen(principal: Principal, _bookId: string, kitchenId: string): Promise<void> {
+  async deleteKitchen(principal: Principal, bookId: string, kitchenId: string): Promise<void> {
+    assertSharedBook(bookId);
     const { supabase } = await this.client(principal);
-    await rpc(supabase, "delete_kitchen", { p_kitchen_id: kitchenId });
+    const { count: recipes, error: recipeError } = await supabase
+      .from("recipes")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .eq("kitchen_id", kitchenId);
+    raise(recipeError);
+    const { count: photos, error: photoError } = await supabase
+      .from("album_photos")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .eq("kitchen_id", kitchenId);
+    raise(photoError);
+    if ((recipes ?? 0) + (photos ?? 0) > 0) throw new AppError(409, "This kitchen still has recipes or photos attached");
+    const { data, error } = await supabase.from("kitchens").delete().eq("id", kitchenId).eq("book_id", bookId).select("id");
+    raise(error);
+    if (!data?.length) throw new AppError(404, "Kitchen not found");
   }
 
-  async grantKitchenMember(
-    principal: Principal,
-    _bookId: string,
-    kitchenId: string,
-    userId: string,
-  ): Promise<{ created: boolean }> {
-    const { supabase } = await this.client(principal);
-    await rpc(supabase, "grant_kitchen_member", { p_kitchen_id: kitchenId, p_user_id: userId });
-    return { created: true };
+  async grantKitchenMember(principal: Principal, bookId: string, kitchenId: string, userId: string): Promise<{ created: boolean }> {
+    void principal;
+    void bookId;
+    void kitchenId;
+    void userId;
+    throw new AppError(404, "Not found");
   }
 
-  async requestJoin(principal: Principal, _bookId: string, kitchenId: string): Promise<{ id: string; replayed: boolean }> {
-    const { supabase } = await this.client(principal);
-    const id = await rpc<string>(supabase, "request_kitchen_join", { p_kitchen_id: kitchenId });
-    return { id, replayed: false };
+  async requestJoin(principal: Principal, bookId: string, kitchenId: string): Promise<{ id: string; replayed: boolean }> {
+    void principal;
+    void bookId;
+    void kitchenId;
+    throw new AppError(404, "Not found");
   }
 
   async approveJoin(principal: Principal, requestId: string): Promise<{ replayed: boolean }> {
-    const { supabase } = await this.client(principal);
-    await rpc(supabase, "approve_kitchen_join", { p_request_id: requestId });
-    return { replayed: false };
+    void principal;
+    void requestId;
+    throw new AppError(404, "Not found");
   }
 
   async rejectJoin(principal: Principal, requestId: string): Promise<{ replayed: boolean }> {
-    const { supabase } = await this.client(principal);
-    await rpc(supabase, "reject_kitchen_join", { p_request_id: requestId });
-    return { replayed: false };
+    void principal;
+    void requestId;
+    throw new AppError(404, "Not found");
   }
 
   async createInvite(principal: Principal, bookId: string): Promise<{ inviteId: string; token: string }> {
-    const { supabase } = await this.client(principal);
-    const row = await rpc<{ id: string; token: string }>(supabase, "create_book_invite", { p_book_id: bookId });
-    return { inviteId: row.id, token: row.token };
+    void principal;
+    void bookId;
+    throw new AppError(404, "Not found");
   }
 
   async revokeInvite(principal: Principal, inviteId: string): Promise<void> {
-    const { supabase } = await this.client(principal);
-    await rpc(supabase, "revoke_book_invite", { p_invite_id: inviteId });
+    void principal;
+    void inviteId;
+    throw new AppError(404, "Not found");
   }
 
   async redeemInvite(principal: Principal, token: string): Promise<{ bookId: string; replayed: boolean }> {
-    const { supabase } = await this.client(principal);
-    const bookId = await rpc<string>(supabase, "redeem_invite", { p_token: token });
-    return { bookId, replayed: false };
+    void principal;
+    void token;
+    throw new AppError(404, "Not found");
   }
 
   async listKitchens(principal: Principal, bookId: string): Promise<KitchenDesk> {
     const book = await this.getBook(principal, bookId);
     const { supabase } = await this.client(principal);
-    const { data: members, error } = await supabase
-      .from("kitchen_members")
-      .select("kitchen_id, user_id, role")
-      .eq("book_id", bookId);
-    raise(error);
-    const { data: requests, error: requestError } = await supabase
-      .from("kitchen_join_requests")
-      .select("id, kitchen_id, user_id, status")
-      .eq("book_id", bookId)
-      .eq("status", "pending");
-    raise(requestError);
     const { data: recipes, error: recipeError } = await supabase.from("recipes").select("kitchen_id").eq("book_id", bookId);
     raise(recipeError);
     const { data: photos, error: photoError } = await supabase.from("album_photos").select("kitchen_id").eq("book_id", bookId);
     raise(photoError);
-    const { data: invites, error: inviteError } = await supabase
-      .from("book_invites")
-      .select("id, created_at, revoked_at, redeemed_at, redeemed_by")
-      .eq("book_id", bookId);
-    raise(inviteError);
     return {
       access: book.access,
       kitchens: book.kitchens.map((kitchen) => ({
         id: kitchen.id,
         name: kitchen.name,
-        myRole: (members ?? []).find((member) => member.kitchen_id === kitchen.id && book.myKitchenIds.includes(kitchen.id) && member.user_id === principal.userId)?.role ?? null,
+        myRole: "lead" as const,
         contentCount:
           (recipes ?? []).filter((recipe) => recipe.kitchen_id === kitchen.id).length +
           (photos ?? []).filter((photo) => photo.kitchen_id === kitchen.id).length,
-        members: (members ?? [])
-          .filter((member) => member.kitchen_id === kitchen.id)
-          .map((member) => ({ userId: member.user_id, name: member.user_id.slice(0, 8), role: member.role })),
-        pendingRequests:
-          book.access === "owner"
-            ? (requests ?? [])
-                .filter((request) => request.kitchen_id === kitchen.id)
-                .map((request) => ({ id: request.id, userId: request.user_id, name: request.user_id.slice(0, 8) }))
-            : [],
+        members: [],
+        pendingRequests: [],
       })),
-      invites:
-        book.access === "owner"
-          ? (invites ?? []).map((invite) => ({
-              id: invite.id,
-              createdAt: Date.parse(invite.created_at),
-              revokedAt: invite.revoked_at ? Date.parse(invite.revoked_at) : null,
-              redeemedAt: invite.redeemed_at ? Date.parse(invite.redeemed_at) : null,
-              redeemedByName: invite.redeemed_by,
-            }))
-          : [],
+      invites: [],
     };
   }
 
   async createAlbum(principal: Principal, bookId: string, name: string): Promise<{ id: string }> {
     const { supabase } = await this.client(principal);
-    const id = await rpc<string>(supabase, "create_album", { p_book_id: bookId, p_name: name });
+    await this.getBook(principal, bookId);
+    const { count, error: countError } = await supabase.from("albums").select("id", { count: "exact", head: true }).eq("book_id", bookId);
+    raise(countError);
+    if ((count ?? 0) >= MAX_ALBUMS) throw new AppError(422, "This book has enough albums");
+    const id = randomUUID();
+    const trimmed = name.trim().slice(0, 80);
+    if (!trimmed) throw new AppError(422, "Album name is required");
+    const { error } = await supabase.from("albums").insert({ id, book_id: bookId, name: trimmed });
+    raise(error);
     return { id };
   }
 
@@ -494,13 +537,43 @@ export class SupabaseRepository {
     principal: Principal,
     input: { bookId: string; albumId: string; kitchenId: string | null; caption: string; bytes: Uint8Array; declaredMime: string },
   ): Promise<{ photoId: string; mediaId: string }> {
+    assertSharedBook(input.bookId);
     const encoded = await reencodeUpload(input.bytes, input.declaredMime);
-    const { supabase, userId } = await this.client(principal);
-    const mediaId = await rpc<string>(supabase, "create_media_asset", {
-      p_book_id: input.bookId,
-      p_kitchen_id: input.kitchenId,
-      p_mime: "image/jpeg",
+    const { supabase } = await this.client(principal);
+    const { count, error: countError } = await supabase
+      .from("album_photos")
+      .select("id", { count: "exact", head: true })
+      .eq("book_id", input.bookId);
+    raise(countError);
+    if ((count ?? 0) >= MAX_PHOTOS) throw new AppError(422, "This book has enough photographs");
+    const { data: album, error: albumError } = await supabase
+      .from("albums")
+      .select("id")
+      .eq("id", input.albumId)
+      .eq("book_id", input.bookId)
+      .maybeSingle();
+    raise(albumError);
+    if (!album) throw new AppError(404, "Album not found");
+    if (input.kitchenId) {
+      const { data: kitchen, error: kitchenError } = await supabase
+        .from("kitchens")
+        .select("id")
+        .eq("id", input.kitchenId)
+        .eq("book_id", input.bookId)
+        .maybeSingle();
+      raise(kitchenError);
+      if (!kitchen) throw new AppError(409, "Cross-book link rejected");
+    }
+    const mediaId = randomUUID();
+    const created = await supabase.from("media_assets").insert({
+      id: mediaId,
+      book_id: input.bookId,
+      kitchen_id: input.kitchenId,
+      mime: "image/jpeg",
+      status: "quarantine",
+      storage_path: "",
     });
+    raise(created.error);
     const storagePath = mediaObjectPath(input.bookId, mediaId);
     try {
       const service = createServiceClient();
@@ -509,28 +582,35 @@ export class SupabaseRepository {
         upsert: false,
       });
       if (uploaded.error) throw new AppError(400, uploaded.error.message);
-      await rpc(service, "mark_media_ready", {
-        p_media_id: mediaId,
-        p_width: encoded.width,
-        p_height: encoded.height,
-        p_path: storagePath,
-      });
+      const ready = await supabase
+        .from("media_assets")
+        .update({ status: "ready", width: encoded.width, height: encoded.height, storage_path: storagePath, mime: "image/jpeg" })
+        .eq("id", mediaId)
+        .eq("book_id", input.bookId)
+        .eq("status", "quarantine")
+        .select("id");
+      raise(ready.error);
+      if (!ready.data?.length) throw new AppError(404, "Photo not found");
     } catch (error) {
-      await rpc(supabase, "reject_media", { p_media_id: mediaId }).catch(() => undefined);
+      await supabase.from("media_assets").update({ status: "rejected" }).eq("id", mediaId).eq("book_id", input.bookId);
       throw error;
     }
-    const photoId = await rpc<string>(supabase, "attach_album_photo", {
-      p_album_id: input.albumId,
-      p_media_id: mediaId,
-      p_caption: input.caption,
-      p_kitchen_id: input.kitchenId,
+    const photoId = randomUUID();
+    const attached = await supabase.from("album_photos").insert({
+      id: photoId,
+      book_id: input.bookId,
+      album_id: input.albumId,
+      media_id: mediaId,
+      kitchen_id: input.kitchenId,
+      caption: input.caption.trim().slice(0, 240),
     });
-    void userId;
+    raise(attached.error);
     return { photoId, mediaId };
   }
 
   async readMedia(principal: Principal, mediaId: string): Promise<{ bytes: Buffer; mime: string }> {
     const { supabase } = await this.client(principal);
+    void principal;
     const { data, error } = await supabase
       .from("media_assets")
       .select("storage_path, mime, status, book_id")
@@ -538,13 +618,12 @@ export class SupabaseRepository {
       .eq("status", "ready")
       .maybeSingle();
     raise(error);
-    if (!data) throw new AppError(404, "Photo not found");
+    if (!data || data.book_id !== sharedBookId()) throw new AppError(404, "Photo not found");
     const path = assertCanonicalMediaPath(data.storage_path, data.book_id, mediaId);
     const service = createServiceClient();
     const downloaded = await service.storage.from("media").download(path);
     if (downloaded.error || !downloaded.data) throw new AppError(404, "Photo not found");
-    const bytes = Buffer.from(await downloaded.data.arrayBuffer());
-    return { bytes, mime: data.mime };
+    return { bytes: Buffer.from(await downloaded.data.arrayBuffer()), mime: data.mime };
   }
 
   async buildPreviewSnapshot(principal: Principal, bookId: string, clothId: CoverId, bleed: boolean): Promise<ExportSnapshot> {
@@ -562,6 +641,7 @@ export class SupabaseRepository {
     const recipes = await this.listRecipes(principal, bookId, {});
     const albums = await this.listAlbums(principal, bookId);
     const detailed = await Promise.all(recipes.map((recipe) => this.getRecipe(principal, bookId, recipe.id)));
+    let embedded = 0;
     return {
       version: 1,
       bookId,
@@ -596,10 +676,11 @@ export class SupabaseRepository {
             name: album.name,
             photos: await Promise.all(
               album.photos.map(async (photo) => {
-                let src = photo.url;
-                if (embed) {
+                let src = "";
+                if (embed && embedded < MAX_EMBEDDED_PHOTOS) {
                   const file = await this.readMedia(principal, photo.mediaId);
                   src = `data:${file.mime};base64,${file.bytes.toString("base64")}`;
+                  embedded += 1;
                 }
                 return { src, caption: photo.caption, meta: photo.meta };
               }),
@@ -615,38 +696,40 @@ export class SupabaseRepository {
     options: { clothId: CoverId; bleed: boolean },
     render: (snapshot: ExportSnapshot) => Promise<Buffer>,
   ): Promise<{ jobId: string; status: "ready" | "failed"; error: string | null }> {
+    if (!pdfExportEnabled()) {
+      return { jobId: "", status: "failed", error: "Use your browser's print dialog. This host cannot run the PDF worker." };
+    }
     const { supabase } = await this.client(principal);
-    const snapshot = await this.capture(principal, bookId, options.clothId, options.bleed, true);
-    const frozen = structuredClone(snapshot);
-    const jobId = await rpc<string>(supabase, "create_export_job", {
-      p_book_id: bookId,
-      p_snapshot: frozen,
+    const renderSnapshot = await this.capture(principal, bookId, options.clothId, options.bleed, true);
+    const frozen = structuredClone(renderSnapshot);
+    for (const album of frozen.albums) {
+      for (const photo of album.photos) photo.src = "";
+    }
+    if (JSON.stringify(frozen).length > MAX_SNAPSHOT_CHARS) throw new AppError(422, "This book is too large to export");
+    const jobId = randomUUID();
+    const created = await supabase.from("export_jobs").insert({
+      id: jobId,
+      book_id: bookId,
+      status: "queued",
+      snapshot: frozen,
     });
+    raise(created.error);
     try {
-      const pdf = await render(structuredClone(frozen));
+      const pdf = await render(structuredClone(renderSnapshot));
       const service = createServiceClient();
       const pdfPath = exportObjectPath(jobId);
-      const uploaded = await service.storage.from("media").upload(pdfPath, pdf, {
-        contentType: "application/pdf",
-        upsert: false,
-      });
+      const uploaded = await service.storage.from("media").upload(pdfPath, pdf, { contentType: "application/pdf", upsert: false });
       if (uploaded.error) throw new AppError(400, uploaded.error.message);
-      const serviceJobs = createServiceClient();
-      await rpc(serviceJobs, "finish_export_job", {
-        p_job_id: jobId,
-        p_status: "ready",
-        p_pdf_path: pdfPath,
-        p_error: null,
-      });
+      const finished = await supabase
+        .from("export_jobs")
+        .update({ status: "ready", pdf_path: pdfPath, error: null })
+        .eq("id", jobId)
+        .eq("book_id", bookId);
+      raise(finished.error);
       return { jobId, status: "ready", error: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : "PDF render failed";
-      await rpc(createServiceClient(), "finish_export_job", {
-        p_job_id: jobId,
-        p_status: "failed",
-        p_pdf_path: null,
-        p_error: message,
-      }).catch(() => undefined);
+      await supabase.from("export_jobs").update({ status: "failed", pdf_path: null, error: message }).eq("id", jobId).eq("book_id", bookId);
       return { jobId, status: "failed", error: message };
     }
   }
@@ -655,19 +738,16 @@ export class SupabaseRepository {
     const { supabase } = await this.client(principal);
     const { data, error } = await supabase
       .from("export_jobs")
-      .select("pdf_path, status, snapshot")
+      .select("pdf_path, status, snapshot, book_id")
       .eq("id", jobId)
       .maybeSingle();
     raise(error);
-    if (!data || data.status !== "ready" || !data.pdf_path) throw new AppError(404, "Export not found");
+    if (!data || data.book_id !== sharedBookId() || data.status !== "ready" || !data.pdf_path) throw new AppError(404, "Export not found");
     const path = assertCanonicalExportPath(data.pdf_path, jobId);
     const service = createServiceClient();
     const downloaded = await service.storage.from("media").download(path);
     if (downloaded.error || !downloaded.data) throw new AppError(404, "Export not found");
     const snapshot = data.snapshot as ExportSnapshot;
-    return {
-      bytes: Buffer.from(await downloaded.data.arrayBuffer()),
-      filename: `${snapshot.title}.pdf`,
-    };
+    return { bytes: Buffer.from(await downloaded.data.arrayBuffer()), filename: `${snapshot.title}.pdf` };
   }
 }

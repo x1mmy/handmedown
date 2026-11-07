@@ -1,8 +1,10 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
+import { assertSharedBook, sharedBookId } from "@/lib/book-scope";
 import { normalizeBookName, UNDO_WINDOW_MS } from "@/lib/constants";
+import { MAX_ALBUMS, MAX_EMBEDDED_PHOTOS, MAX_INGREDIENTS, MAX_KITCHENS, MAX_PHOTOS, MAX_RECIPES, MAX_STEPS } from "@/lib/limits";
 import { AppError } from "@/lib/errors";
 import { formatQuantity } from "@/lib/fractions";
 import { reencodeUpload } from "@/lib/validation/upload";
@@ -120,10 +122,6 @@ export type DemoState = {
 
 type Resolved = { book: BookRow; userId: string | null; access: BookAccess };
 
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
 function requireText(value: string, label: string, max = 160): string {
   const text = value.trim();
   if (!text) throw new AppError(422, `${label} is required`);
@@ -154,9 +152,11 @@ function assertRecipeInput(input: RecipeInput): RecipeInput {
     throw new AppError(422, "Time must be a whole number of minutes");
   }
   if (input.ingredients.length === 0) throw new AppError(422, "Add at least one ingredient");
+  if (input.ingredients.length > MAX_INGREDIENTS) throw new AppError(422, "Too many ingredients");
   input.ingredients.forEach(assertIngredient);
   const steps = input.steps.map((step) => step.trim()).filter(Boolean);
   if (steps.length === 0) throw new AppError(422, "Add at least one step");
+  if (steps.length > MAX_STEPS || steps.some((step) => step.length > 500)) throw new AppError(422, "That recipe is too long");
   return {
     ...input,
     title,
@@ -321,6 +321,7 @@ export class DemoRepository {
 
   private resolve(principal: Principal, bookId: string, intent: "read" | "write"): Resolved {
     void intent;
+    assertSharedBook(bookId);
     const book = this.state.books.find((item) => item.id === bookId);
     if (!book) throw new AppError(404, "Book not found");
     // The link is the access. Kitchens organise recipes; they do not grant rights.
@@ -391,19 +392,10 @@ export class DemoRepository {
   }
 
   listMyBooks(principal: Principal): Promise<BookSummary[]> {
+    void principal;
     return this.tx(() => {
-      const books: BookSummary[] = [];
-      if (!principal.userId) {
-        return this.state.books.map((book) => this.summary(book, "owner"));
-      }
-      for (const book of this.state.books) {
-        const member = this.state.bookMembers.find(
-          (item) => item.bookId === book.id && item.userId === principal.userId,
-        );
-        if (member) books.push(this.summary(book, member.role));
-        else if (book.isExample) books.push(this.summary(book, "guest"));
-      }
-      return books;
+      const book = this.state.books.find((item) => item.id === sharedBookId());
+      return book ? [this.summary(book, "owner")] : [];
     });
   }
 
@@ -476,32 +468,11 @@ export class DemoRepository {
     principal: Principal,
     input: { draftKey: string; title: string; kitchenName: string },
   ): Promise<{ bookId: string; created: boolean }> {
+    void input;
     return this.tx(() => {
-      const actor = principal.userId ?? USER_PREVIEW;
-      const draftKey = requireText(input.draftKey, "Draft key", 80);
-      if (draftKey.length < 8) throw new AppError(422, "Draft key is too short");
-      const title = normalizeBookName(input.title);
-      const kitchenName = requireText(input.kitchenName || "Our Kitchen", "Kitchen", 80);
-      const existing = this.state.books.find((book) => book.draftKey === draftKey);
-      if (existing) {
-        if (existing.ownerId !== actor) throw new AppError(409, "Draft key conflict");
-        return { bookId: existing.id, created: false };
-      }
-      const bookId = randomUUID();
-      const kitchenId = randomUUID();
-      this.state.books.push({
-        id: bookId,
-        title,
-        ownerId: actor,
-        draftKey,
-        isExample: false,
-        createdAt: this.now(),
-      });
-      this.state.bookMembers.push({ bookId, userId: actor, role: "owner" });
-      this.state.kitchens.push({ id: kitchenId, bookId, name: kitchenName });
-      this.state.kitchenMembers.push({ bookId, kitchenId, userId: actor, role: "lead" });
-      this.persist();
-      return { bookId, created: true };
+      const bookId = sharedBookId();
+      this.resolve(principal, bookId, "read");
+      return { bookId, created: false };
     });
   }
 
@@ -518,6 +489,9 @@ export class DemoRepository {
     return this.tx(() => {
       const resolved = this.resolve(principal, bookId, "write");
       const clean = assertRecipeInput(input);
+      if (this.state.recipes.filter((item) => item.bookId === bookId && !item.deletedAt).length >= MAX_RECIPES) {
+        throw new AppError(422, "This book has enough recipes");
+      }
       this.kitchen(bookId, clean.kitchenId);
       this.assertEditor(bookId, clean.kitchenId, resolved.userId);
       const id = randomUUID();
@@ -659,6 +633,9 @@ export class DemoRepository {
     return this.tx(() => {
       const resolved = this.resolve(principal, bookId, "write");
       if (resolved.access !== "owner" || !resolved.userId) throw new AppError(403, "Only the owner can add a kitchen");
+      if (this.state.kitchens.filter((item) => item.bookId === bookId).length >= MAX_KITCHENS) {
+        throw new AppError(422, "This book has enough kitchens");
+      }
       const id = randomUUID();
       this.state.kitchens.push({ id, bookId, name: requireText(name, "Kitchen", 80) });
       this.state.kitchenMembers.push({ bookId, kitchenId: id, userId: resolved.userId, role: "lead" });
@@ -670,7 +647,8 @@ export class DemoRepository {
   updateKitchenName(principal: Principal, bookId: string, kitchenId: string, name: string): Promise<void> {
     return this.tx(() => {
       this.resolve(principal, bookId, "write");
-      const kitchen = this.kitchen(bookId, kitchenId);
+      const kitchen = this.state.kitchens.find((item) => item.id === kitchenId && item.bookId === bookId);
+      if (!kitchen) throw new AppError(404, "Kitchen not found");
       kitchen.name = normalizeBookName(name);
       this.persist();
     });
@@ -700,143 +678,61 @@ export class DemoRepository {
     kitchenId: string,
     userId: string,
   ): Promise<{ created: boolean }> {
+    void principal;
+    void bookId;
+    void kitchenId;
+    void userId;
     return this.tx(() => {
-      const resolved = this.resolve(principal, bookId, "write");
-      this.kitchen(bookId, kitchenId);
-      const role = this.kitchenRole(bookId, kitchenId, resolved.userId);
-      if (resolved.access !== "owner" && role !== "lead") {
-        throw new AppError(403, "You cannot grant kitchen membership");
-      }
-      if (!principal.userId || userId === principal.userId) {
-        throw new AppError(403, "You cannot grant membership to yourself");
-      }
-      const bookMember = this.state.bookMembers.some((item) => item.bookId === bookId && item.userId === userId);
-      if (!bookMember) throw new AppError(409, "That person has not joined the book");
-      const existing = this.state.kitchenMembers.find(
-        (item) => item.kitchenId === kitchenId && item.userId === userId,
-      );
-      if (existing) return { created: false };
-      this.state.kitchenMembers.push({ bookId, kitchenId, userId, role: "cook" });
-      this.persist();
-      return { created: true };
+      throw new AppError(404, "Not found");
     });
   }
 
   requestJoin(principal: Principal, bookId: string, kitchenId: string): Promise<{ id: string; replayed: boolean }> {
+    void principal;
+    void bookId;
+    void kitchenId;
     return this.tx(() => {
-      const resolved = this.resolve(principal, bookId, "write");
-      if (!resolved.userId || resolved.access === "guest") throw new AppError(403, "Join the book before asking for a kitchen");
-      this.kitchen(bookId, kitchenId);
-      if (this.kitchenRole(bookId, kitchenId, resolved.userId)) {
-        throw new AppError(409, "You are already in this kitchen");
-      }
-      const pending = this.state.joinRequests.find(
-        (item) => item.kitchenId === kitchenId && item.userId === resolved.userId && item.status === "pending",
-      );
-      if (pending) return { id: pending.id, replayed: true };
-      const id = randomUUID();
-      this.state.joinRequests.push({
-        id,
-        bookId,
-        kitchenId,
-        userId: resolved.userId,
-        status: "pending",
-        createdAt: this.now(),
-      });
-      this.persist();
-      return { id, replayed: false };
+      throw new AppError(404, "Not found");
     });
   }
 
   approveJoin(principal: Principal, requestId: string): Promise<{ replayed: boolean }> {
-    return this.tx(() => this.decideJoin(principal, requestId, "approved"));
+    void principal;
+    void requestId;
+    return this.tx(() => {
+      throw new AppError(404, "Not found");
+    });
   }
 
   rejectJoin(principal: Principal, requestId: string): Promise<{ replayed: boolean }> {
-    return this.tx(() => this.decideJoin(principal, requestId, "rejected"));
-  }
-
-  private decideJoin(principal: Principal, requestId: string, status: "approved" | "rejected"): { replayed: boolean } {
-    const request = this.state.joinRequests.find((item) => item.id === requestId);
-    if (!request) throw new AppError(404, "Request not found");
-    const resolved = this.resolve(principal, request.bookId, "write");
-    const role = this.kitchenRole(request.bookId, request.kitchenId, resolved.userId);
-    if (resolved.access !== "owner" && role !== "lead") throw new AppError(403, "You cannot decide this request");
-    if (principal.userId && request.userId === principal.userId) {
-      throw new AppError(403, "You cannot grant membership to yourself");
-    }
-    if (request.status === status) return { replayed: true };
-    if (request.status !== "pending") throw new AppError(409, "This request was already decided");
-    request.status = status;
-    if (status === "approved") {
-      const exists = this.state.kitchenMembers.some(
-        (item) => item.kitchenId === request.kitchenId && item.userId === request.userId,
-      );
-      if (!exists) {
-        this.state.kitchenMembers.push({
-          bookId: request.bookId,
-          kitchenId: request.kitchenId,
-          userId: request.userId,
-          role: "cook",
-        });
-      }
-    }
-    this.persist();
-    return { replayed: false };
+    void principal;
+    void requestId;
+    return this.tx(() => {
+      throw new AppError(404, "Not found");
+    });
   }
 
   createInvite(principal: Principal, bookId: string): Promise<{ inviteId: string; token: string }> {
+    void principal;
+    void bookId;
     return this.tx(() => {
-      const resolved = this.resolve(principal, bookId, "write");
-      if (resolved.access !== "owner" || !resolved.userId) throw new AppError(403, "Only the owner can invite");
-      const token = randomBytes(24).toString("base64url");
-      const inviteId = randomUUID();
-      this.state.invites.push({
-        id: inviteId,
-        bookId,
-        tokenHash: hashToken(token),
-        createdBy: resolved.userId,
-        revokedAt: null,
-        redeemedBy: null,
-        redeemedAt: null,
-        createdAt: this.now(),
-      });
-      this.persist();
-      return { inviteId, token };
+      throw new AppError(404, "Not found");
     });
   }
 
   revokeInvite(principal: Principal, inviteId: string): Promise<void> {
+    void principal;
+    void inviteId;
     return this.tx(() => {
-      const invite = this.state.invites.find((item) => item.id === inviteId);
-      if (!invite) throw new AppError(404, "Invite not found");
-      const resolved = this.resolve(principal, invite.bookId, "write");
-      if (resolved.access !== "owner") throw new AppError(403, "Only the owner can revoke an invite");
-      invite.revokedAt = this.now();
-      this.persist();
+      throw new AppError(404, "Not found");
     });
   }
 
   redeemInvite(principal: Principal, token: string): Promise<{ bookId: string; replayed: boolean }> {
+    void principal;
+    void token;
     return this.tx(() => {
-      if (!principal.userId) throw new AppError(401, "Sign in required");
-      const invite = this.state.invites.find((item) => item.tokenHash === hashToken(token.trim()));
-      if (!invite) throw new AppError(404, "Invite not found");
-      if (invite.revokedAt) throw new AppError(403, "This invite has been revoked");
-      if (invite.redeemedBy && invite.redeemedBy !== principal.userId) {
-        throw new AppError(403, "This invite has already been used");
-      }
-      if (invite.redeemedBy === principal.userId) return { bookId: invite.bookId, replayed: true };
-      const member = this.state.bookMembers.find(
-        (item) => item.bookId === invite.bookId && item.userId === principal.userId,
-      );
-      if (!member) {
-        this.state.bookMembers.push({ bookId: invite.bookId, userId: principal.userId, role: "reader" });
-      }
-      invite.redeemedBy = principal.userId;
-      invite.redeemedAt = this.now();
-      this.persist();
-      return { bookId: invite.bookId, replayed: false };
+      throw new AppError(404, "Not found");
     });
   }
 
@@ -886,6 +782,9 @@ export class DemoRepository {
     return this.tx(() => {
       const resolved = this.resolve(principal, bookId, "write");
       if (!resolved.userId || resolved.access === "guest") throw new AppError(403, "Join the book to add an album");
+      if (this.state.albums.filter((item) => item.bookId === bookId).length >= MAX_ALBUMS) {
+        throw new AppError(422, "This book has enough albums");
+      }
       const id = randomUUID();
       this.state.albums.push({ id, bookId, name: requireText(name, "Album", 80) });
       this.persist();
@@ -928,6 +827,9 @@ export class DemoRepository {
       if (!resolved.userId || resolved.access === "guest") throw new AppError(403, "Join the book to add a photo");
       const album = this.state.albums.find((item) => item.id === input.albumId && item.bookId === input.bookId);
       if (!album) throw new AppError(404, "Album not found");
+      if (this.state.photos.filter((item) => item.bookId === input.bookId).length >= MAX_PHOTOS) {
+        throw new AppError(422, "This book has enough photographs");
+      }
       if (input.kitchenId) {
         this.kitchen(input.bookId, input.kitchenId);
         this.assertEditor(input.bookId, input.kitchenId, resolved.userId);
@@ -1005,6 +907,7 @@ export class DemoRepository {
           steps: [...recipe.steps],
         };
       });
+    let embedded = 0;
     const albums = this.state.albums
       .filter((album) => album.bookId === bookId)
       .map((album) => ({
@@ -1015,9 +918,12 @@ export class DemoRepository {
             const asset = this.state.media.find((mediaRow) => mediaRow.id === item.mediaId);
             const kitchen = this.state.kitchens.find((row) => row.id === item.kitchenId);
             let src = asset ? `/api/media/${asset.id}` : "";
-            if (embed && asset) {
+            if (embed && asset && embedded < MAX_EMBEDDED_PHOTOS) {
               const bytes = this.mediaBytes.get(asset.id) ?? this.readSeed(asset.storagePath);
               src = `data:${asset.mime};base64,${bytes.toString("base64")}`;
+              embedded += 1;
+            } else if (embed) {
+              src = "";
             }
             return {
               src,
@@ -1065,7 +971,13 @@ export class DemoRepository {
     return this.tx(async () => {
       const resolved = this.resolve(principal, bookId, "read");
       if (!resolved.userId) throw new AppError(401, "Sign in required");
-      const snapshot = structuredClone(this.snapshot(bookId, options.clothId, options.bleed, true));
+      const renderSnapshot = this.snapshot(bookId, options.clothId, options.bleed, true);
+      const snapshot = structuredClone(renderSnapshot);
+      for (const album of snapshot.albums) {
+        for (const photo of album.photos) {
+          if (photo.src.startsWith("data:")) photo.src = "";
+        }
+      }
       const jobId = randomUUID();
       const job: ExportRow = {
         id: jobId,
@@ -1078,7 +990,7 @@ export class DemoRepository {
       };
       this.state.exportJobs.push(job);
       try {
-        const pdf = await render(structuredClone(job.snapshot));
+        const pdf = await render(structuredClone(renderSnapshot));
         if (job.snapshot !== snapshot) throw new Error("snapshot mutated");
         this.pdfBytes.set(jobId, pdf);
         job.status = "ready";

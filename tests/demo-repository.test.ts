@@ -39,17 +39,13 @@ function input(kitchenId: string, title = "Weeknight rice"): RecipeInput {
 }
 
 describe("demo repository permissions", () => {
-  it("lets anyone with the link open a book", async () => {
+  it("lets anyone with the link open the shared book and lists only that book", async () => {
     const repo = DemoRepository.create(createSeedState());
     const example = await repo.getBook(outsider, EXAMPLE_BOOK_ID);
     expect(example.access).toBe("owner");
-    const created = await repo.createBookFromDraft(sam, {
-      draftKey: "private-draft-key",
-      title: "Sam's notes",
-      kitchenName: "Home",
-    });
-    const opened = await repo.getBook(outsider, created.bookId);
-    expect(opened.access).toBe("owner");
+    await expect(repo.getBook(outsider, "20000000-0000-4000-8000-000000000099")).rejects.toMatchObject({ status: 404 });
+    const books = await repo.listMyBooks(anon);
+    expect(books.map((book) => book.id)).toEqual([EXAMPLE_BOOK_ID]);
   });
 
   it("stops a member editing another kitchen", async () => {
@@ -59,49 +55,32 @@ describe("demo repository permissions", () => {
     expect(moved.version).toBe(recipe.version + 1);
   });
 
-  it("refuses self-granted kitchen membership", async () => {
+  it("does not expose invites or kitchen membership", async () => {
     const repo = DemoRepository.create(createSeedState());
-    await expect(repo.grantKitchenMember(owner, EXAMPLE_BOOK_ID, KITCHEN_SAM, USER_PREVIEW)).rejects.toMatchObject({ status: 403 });
-    await expect(repo.grantKitchenMember(leila, EXAMPLE_BOOK_ID, KITCHEN_SAM, USER_LEILA)).rejects.toMatchObject({ status: 403 });
-    const request = await repo.requestJoin(leila, EXAMPLE_BOOK_ID, KITCHEN_SAM);
-    await expect(repo.approveJoin(leila, request.id)).rejects.toMatchObject({ status: 403 });
-    const approved = await repo.approveJoin(sam, request.id);
-    expect(approved.replayed).toBe(false);
-    const again = await repo.approveJoin(sam, request.id);
-    expect(again.replayed).toBe(true);
-    const desk = await repo.listKitchens(leila, EXAMPLE_BOOK_ID);
-    const members = desk.kitchens.find((kitchen) => kitchen.id === KITCHEN_SAM)?.members ?? [];
-    expect(members.filter((member) => member.userId === USER_LEILA)).toHaveLength(1);
+    await expect(repo.grantKitchenMember(owner, EXAMPLE_BOOK_ID, KITCHEN_SAM, USER_PREVIEW)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.requestJoin(leila, EXAMPLE_BOOK_ID, KITCHEN_SAM)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.createInvite(owner, EXAMPLE_BOOK_ID)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.redeemInvite(outsider, "not-a-token")).rejects.toMatchObject({ status: 404 });
   });
 
-  it("rejects a recipe that points at another book's kitchen", async () => {
+  it("rejects a foreign book, recipe, photo, and pdf", async () => {
     const repo = DemoRepository.create(createSeedState());
-    const other = await repo.createBookFromDraft(outsider, {
-      draftKey: "outsider-draft-1",
-      title: "Outside",
-      kitchenName: "Elsewhere",
-    });
-    await expect(repo.createRecipe(outsider, other.bookId, input(KITCHEN_NAN))).rejects.toMatchObject({ status: 409 });
+    const foreign = "20000000-0000-4000-8000-000000000099";
+    await expect(repo.createRecipe(outsider, foreign, input(KITCHEN_NAN))).rejects.toMatchObject({ status: 404 });
+    await expect(repo.getRecipe(nan, EXAMPLE_BOOK_ID, foreign)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.updateRecipe(nan, EXAMPLE_BOOK_ID, foreign, 1, input(KITCHEN_NAN))).rejects.toMatchObject({ status: 404 });
+    await expect(repo.readMedia(nan, foreign)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.readExportPdf(nan, foreign)).rejects.toMatchObject({ status: 404 });
+    await expect(repo.updateKitchenName(owner, EXAMPLE_BOOK_ID, foreign, "Nope")).rejects.toMatchObject({ status: 404 });
   });
 
-  it("replays invites, cooks, and drafts without doubling", async () => {
+  it("replays cooks and the shared-book bootstrap without doubling", async () => {
     const repo = DemoRepository.create(createSeedState());
-    const invite = await repo.createInvite(owner, EXAMPLE_BOOK_ID);
-    const first = await repo.redeemInvite(outsider, invite.token);
-    const second = await repo.redeemInvite(outsider, invite.token);
-    expect(second).toEqual({ bookId: first.bookId, replayed: true });
-    const desk = await repo.listKitchens(outsider, EXAMPLE_BOOK_ID);
-    expect(desk.access).toBe("owner");
-    expect(desk.kitchens.every((kitchen) => kitchen.myRole === null)).toBe(true);
-    await repo.revokeInvite(owner, invite.inviteId);
-    const stranger = await repo.upsertDemoUser("stranger@example.com");
-    await expect(repo.redeemInvite({ userId: stranger.id, preview: false }, invite.token)).rejects.toMatchObject({ status: 403 });
-
     const draft = { draftKey: "same-draft-key", title: "Twice", kitchenName: "Home" };
     const created = await repo.createBookFromDraft(sam, draft);
-    const replay = await repo.createBookFromDraft(sam, draft);
-    expect(replay).toEqual({ bookId: created.bookId, created: false });
-    await expect(repo.createBookFromDraft(leila, draft)).rejects.toMatchObject({ status: 409 });
+    const replay = await repo.createBookFromDraft(leila, draft);
+    expect(created).toEqual({ bookId: EXAMPLE_BOOK_ID, created: false });
+    expect(replay).toEqual(created);
 
     const cooks = await Promise.all([
       repo.incrementCooked(nan, EXAMPLE_BOOK_ID, RECIPE_SALMON, "same-key"),
@@ -179,8 +158,10 @@ describe("demo repository permissions", () => {
     const book = await repo.getBook(anon, EXAMPLE_BOOK_ID);
     expect(book.title).toBe("The Fam");
     expect(book.recipeCount).toBe(7);
+    await repo.updateBookTitle(anon, EXAMPLE_BOOK_ID, "   ");
+    const renamed = await repo.getBook(anon, EXAMPLE_BOOK_ID);
+    expect(renamed.title).toBe("The Fam");
     const created = await repo.createBookFromDraft(anon, { draftKey: "anon-draft-key", title: "   ", kitchenName: "Nope" });
-    const blank = await repo.getBook(anon, created.bookId);
-    expect(blank.title).toBe("The Fam");
+    expect(created).toEqual({ bookId: EXAMPLE_BOOK_ID, created: false });
   });
 });

@@ -1,4 +1,4 @@
-export type HttpStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500;
+export type HttpStatus = 400 | 401 | 403 | 404 | 409 | 411 | 413 | 422 | 429 | 500;
 
 export class AppError extends Error {
   readonly status: HttpStatus;
