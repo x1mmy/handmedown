@@ -102,4 +102,4 @@ PDF export uses Playwright and Chromium. Vercel serverless cannot run that worke
 
 ## Footer
 
-Every page ends with the exact words “Built by Stash Labs”, set in small caps, linking to `STASH_LABS_URL` in `src/lib/constants.ts` (`https://www.stashlabs.com.au/`).
+Every page ends with the credit “Built by Stash Labs.” (the Stash Labs mark and wordmark, with its orange full stop, as on stashlabs.com.au), linking to `STASH_LABS_URL` in `src/lib/constants.ts` (`https://www.stashlabs.com.au/`).

@@ -103,24 +103,19 @@ export class SupabaseRepository {
   async getBook(principal: Principal, bookId: string): Promise<BookDetail> {
     assertSharedBook(bookId);
     const { supabase } = await this.client(principal);
-    const { data: book, error } = await supabase
-      .from("books")
-      .select("id, title, is_example")
-      .eq("id", bookId)
-      .maybeSingle();
-    raise(error);
+    // One round trip: the three reads run in parallel.
+    const [bookResult, kitchenResult, countResult] = await Promise.all([
+      supabase.from("books").select("id, title, is_example").eq("id", bookId).maybeSingle(),
+      supabase.from("kitchens").select("id, name").eq("book_id", bookId),
+      supabase.from("recipes").select("id", { count: "exact", head: true }).eq("book_id", bookId).is("deleted_at", null),
+    ]);
+    raise(bookResult.error);
+    raise(kitchenResult.error);
+    raise(countResult.error);
+    const book = bookResult.data;
     if (!book) throw new AppError(404, "Book not found");
-    const { data: kitchens, error: kitchenError } = await supabase
-      .from("kitchens")
-      .select("id, name")
-      .eq("book_id", bookId);
-    raise(kitchenError);
-    const { count, error: countError } = await supabase
-      .from("recipes")
-      .select("id", { count: "exact", head: true })
-      .eq("book_id", bookId)
-      .is("deleted_at", null);
-    raise(countError);
+    const kitchens = kitchenResult.data;
+    const count = countResult.count;
     const access = "owner" as const;
     return {
       id: book.id,
@@ -145,16 +140,17 @@ export class SupabaseRepository {
     let query = supabase.from("recipes").select("*").eq("book_id", bookId).is("deleted_at", null);
     if (filters.course && filters.course !== "all") query = query.eq("course", filters.course);
     if (filters.kitchenId) query = query.eq("kitchen_id", filters.kitchenId);
-    const { data, error } = await query;
-    raise(error);
-    const { data: kitchens, error: kitchenError } = await supabase.from("kitchens").select("id, name").eq("book_id", bookId);
-    raise(kitchenError);
-    const { data: favs, error: favError } = await supabase
-      .from("recipe_favourites")
-      .select("recipe_id")
-      .eq("book_id", bookId)
-      .eq("user_id", userId);
-    raise(favError);
+    const [recipeResult, kitchenResult, favResult] = await Promise.all([
+      query,
+      supabase.from("kitchens").select("id, name").eq("book_id", bookId),
+      supabase.from("recipe_favourites").select("recipe_id").eq("book_id", bookId).eq("user_id", userId),
+    ]);
+    raise(recipeResult.error);
+    raise(kitchenResult.error);
+    raise(favResult.error);
+    const data = recipeResult.data;
+    const kitchens = kitchenResult.data;
+    const favs = favResult.data;
     const names = new Map((kitchens ?? []).map((kitchen) => [kitchen.id, kitchen.name]));
     const favouriteIds = new Set((favs ?? []).map((item) => item.recipe_id));
     const needle = filters.query?.trim().toLowerCase() ?? "";
@@ -192,8 +188,8 @@ export class SupabaseRepository {
   }
 
   async listRecipes(principal: Principal, bookId: string, filters: RecipeFilters = {}): Promise<RecipeCard[]> {
+    assertSharedBook(bookId);
     const { supabase, userId } = await this.client(principal);
-    await this.getBook(principal, bookId);
     return this.cards(supabase, userId, bookId, filters);
   }
 
@@ -564,37 +560,7 @@ export class SupabaseRepository {
       raise(kitchenError);
       if (!kitchen) throw new AppError(409, "Cross-book link rejected");
     }
-    const mediaId = randomUUID();
-    const created = await supabase.from("media_assets").insert({
-      id: mediaId,
-      book_id: input.bookId,
-      kitchen_id: input.kitchenId,
-      mime: "image/jpeg",
-      status: "quarantine",
-      storage_path: "",
-    });
-    raise(created.error);
-    const storagePath = mediaObjectPath(input.bookId, mediaId);
-    try {
-      const service = createServiceClient();
-      const uploaded = await service.storage.from("media").upload(storagePath, encoded.data, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-      if (uploaded.error) throw new AppError(400, uploaded.error.message);
-      const ready = await supabase
-        .from("media_assets")
-        .update({ status: "ready", width: encoded.width, height: encoded.height, storage_path: storagePath, mime: "image/jpeg" })
-        .eq("id", mediaId)
-        .eq("book_id", input.bookId)
-        .eq("status", "quarantine")
-        .select("id");
-      raise(ready.error);
-      if (!ready.data?.length) throw new AppError(404, "Photo not found");
-    } catch (error) {
-      await supabase.from("media_assets").update({ status: "rejected" }).eq("id", mediaId).eq("book_id", input.bookId);
-      throw error;
-    }
+    const mediaId = await this.storeImage(supabase, input.bookId, input.kitchenId, encoded);
     const photoId = randomUUID();
     const attached = await supabase.from("album_photos").insert({
       id: photoId,
@@ -606,6 +572,80 @@ export class SupabaseRepository {
     });
     raise(attached.error);
     return { photoId, mediaId };
+  }
+
+  /** Quarantine row, private Storage upload, then mark ready. Rejects the row if any step fails. */
+  private async storeImage(
+    supabase: SupabaseClient,
+    bookId: string,
+    kitchenId: string | null,
+    encoded: Awaited<ReturnType<typeof reencodeUpload>>,
+  ): Promise<string> {
+    const mediaId = randomUUID();
+    const created = await supabase.from("media_assets").insert({
+      id: mediaId,
+      book_id: bookId,
+      kitchen_id: kitchenId,
+      mime: "image/jpeg",
+      status: "quarantine",
+      storage_path: "",
+    });
+    raise(created.error);
+    const storagePath = mediaObjectPath(bookId, mediaId);
+    try {
+      const service = createServiceClient();
+      const uploaded = await service.storage.from("media").upload(storagePath, encoded.data, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+      if (uploaded.error) throw new AppError(400, uploaded.error.message);
+      const ready = await supabase
+        .from("media_assets")
+        .update({ status: "ready", width: encoded.width, height: encoded.height, storage_path: storagePath, mime: "image/jpeg" })
+        .eq("id", mediaId)
+        .eq("book_id", bookId)
+        .eq("status", "quarantine")
+        .select("id");
+      raise(ready.error);
+      if (!ready.data?.length) throw new AppError(404, "Photo not found");
+    } catch (error) {
+      await supabase.from("media_assets").update({ status: "rejected" }).eq("id", mediaId).eq("book_id", bookId);
+      throw error;
+    }
+    return mediaId;
+  }
+
+  async setRecipePhoto(
+    principal: Principal,
+    bookId: string,
+    recipeId: string,
+    input: { bytes: Uint8Array; declaredMime: string },
+  ): Promise<{ mediaId: string; heroUrl: string }> {
+    assertSharedBook(bookId);
+    const encoded = await reencodeUpload(input.bytes, input.declaredMime);
+    const { supabase } = await this.client(principal);
+    const recipe = await this.requireRecipe(supabase, bookId, recipeId);
+    const mediaId = await this.storeImage(supabase, bookId, recipe.kitchen_id, encoded);
+    const { data, error } = await supabase
+      .from("recipes")
+      .update({ hero_media_id: mediaId, updated_at: new Date().toISOString() })
+      .eq("id", recipeId)
+      .eq("book_id", bookId)
+      .select("id");
+    raise(error);
+    if (!data?.length) throw new AppError(404, "Recipe not found");
+    return { mediaId, heroUrl: `/api/media/${mediaId}` };
+  }
+
+  async clearRecipePhoto(principal: Principal, bookId: string, recipeId: string): Promise<void> {
+    const { supabase } = await this.client(principal);
+    await this.requireRecipe(supabase, bookId, recipeId);
+    const { error } = await supabase
+      .from("recipes")
+      .update({ hero_media_id: null, updated_at: new Date().toISOString() })
+      .eq("id", recipeId)
+      .eq("book_id", bookId);
+    raise(error);
   }
 
   async readMedia(principal: Principal, mediaId: string): Promise<{ bytes: Buffer; mime: string }> {

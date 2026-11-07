@@ -58,3 +58,81 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- Stash Labs credit, matched to stashlabs.com.au ---------------------- */
+.stash-credit {
+  --sl-accent: #e5522a;
+  --sl-ink: #16130f;
+  --sl-muted: #6e675d;
+  --sl-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  color: var(--sl-ink);
+  outline: none;
+}
+.stash-credit__by {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-muted);
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 1px;
+  padding-bottom: 2px;
+  transition: color 0.2s, background-size 0.35s var(--sl-ease);
+}
+.stash-credit__mark {
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+}
+.stash-credit__fold {
+  fill: var(--sl-accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.35s var(--sl-ease);
+}
+.stash-credit__word {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28em;
+  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.stash-credit__stash {
+  font-weight: 600;
+}
+.stash-credit__stop {
+  width: 5px;
+  height: 6px;
+  margin-left: -0.15em;
+  overflow: visible;
+  fill: var(--sl-accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.35s var(--sl-ease);
+}
+.stash-credit:hover .stash-credit__by,
+.stash-credit:focus-visible .stash-credit__by {
+  color: var(--sl-ink);
+  background-size: 100% 1px;
+}
+.stash-credit:hover .stash-credit__fold,
+.stash-credit:focus-visible .stash-credit__fold {
+  transform: scaleY(-1);
+}
+.stash-credit:hover .stash-credit__stop,
+.stash-credit:focus-visible .stash-credit__stop {
+  transform: translateY(-3px) rotate(-12deg);
+}
+.stash-credit:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--color-border-focus-ring);
+}

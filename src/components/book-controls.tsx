@@ -73,9 +73,10 @@ export function TopNav({ title }: { title: string }) {
   const pathname = usePathname();
   return (
     <header className="no-print fixed inset-x-0 top-0 z-40 hidden h-16 border-b border-separator-border bg-background-primary-default/85 backdrop-blur-xl lg:block">
-      <div className="mx-auto flex h-full max-w-5xl items-center gap-6 px-8">
-        <Link href="/" className="truncate text-headline-semibold text-text-primary">
-          {title}
+      <div className="mx-auto flex h-full max-w-6xl items-center gap-6 px-10 xl:max-w-7xl">
+        <Link href="/" aria-label={`Hand Me Down, ${title}`} className="flex min-w-0 items-center gap-2.5 text-headline-semibold text-text-primary">
+          <img src="/logo.png" alt="" width={32} height={32} className="size-8 shrink-0 rounded-[10px]" />
+          <span className="truncate">Hand Me Down</span>
         </Link>
         <nav aria-label="Sections" className="flex flex-1 items-center justify-center gap-1">
           {NAV.map((item) => {

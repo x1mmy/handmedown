@@ -1,6 +1,7 @@
 import "server-only";
 
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { getPrincipal } from "@/lib/auth/principal";
 import { sharedBookId } from "@/lib/book-scope";
@@ -12,8 +13,8 @@ export async function loadContext(): Promise<{ principal: Principal; repo: AppRe
   return { principal: await getPrincipal(), repo: getRepository() };
 }
 
-/** The app holds one family book. */
-export async function loadBook(bookId: string = sharedBookId()): Promise<{
+/** The app holds one family book. Cached per request, so layout, page and metadata share one fetch. */
+export const loadBook = cache(async function loadBook(bookId: string = sharedBookId()): Promise<{
   principal: Principal;
   repo: AppRepository;
   book: BookDetail;
@@ -28,4 +29,4 @@ export async function loadBook(bookId: string = sharedBookId()): Promise<{
     }
     throw error;
   }
-}
+});

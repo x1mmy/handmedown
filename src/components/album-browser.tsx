@@ -56,22 +56,23 @@ export function AlbumBrowser({
       ) : null}
 
       {visible.length === 0 ? (
-        <div className="mx-4 mt-6 rounded-3xl bg-background-primary-default px-6 py-12 text-center shadow-card lg:mx-0">
-          <p className="text-title-3-semibold text-text-primary">No photos yet</p>
-          <p className="mt-1 text-body-regular text-text-secondary">Snap the next family dinner and add it here.</p>
+        <div className="mx-4 mt-6 rounded-3xl bg-background-primary-default px-6 py-12 text-center shadow-card lg:mx-0 lg:mt-8 lg:py-20">
+          <img src="/logo.png" alt="" width={80} height={80} className="mx-auto mb-5 hidden size-20 rounded-2xl lg:block" />
+          <p className="text-title-3-semibold text-text-primary lg:text-title-1-semibold">No photos yet</p>
+          <p className="mt-1 text-body-regular text-text-secondary lg:text-headline-regular">Snap the next family dinner and add it here.</p>
           <Button leadingIcon={RiCamera3Line} onClick={() => setAddOpen(true)} className="mt-5 h-11 rounded-full px-5">
             Add a photo
           </Button>
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-3 gap-0.5 sm:gap-1 lg:grid-cols-5 lg:gap-2">
+        <div className="mt-4 grid grid-cols-3 gap-0.5 sm:gap-1 lg:mt-6 lg:grid-cols-4 lg:gap-3 xl:grid-cols-5">
           {visible.map((photo, index) => (
             <motion.button
               key={photo.id}
               type="button"
               aria-label={photo.caption || "Family photo"}
               onClick={() => setOpen(photo)}
-              className="relative aspect-square overflow-hidden bg-background-tertiary-default outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring lg:rounded-xl"
+              className="relative aspect-square overflow-hidden bg-background-tertiary-default outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring lg:rounded-2xl"
               initial={reduce ? false : photo.id === freshId ? { opacity: 0, scale: 0.85 } : { opacity: 0 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.35, delay: photo.id === freshId ? 0 : Math.min(index, 12) * 0.02, ease: [0.32, 0.72, 0, 1] }}
@@ -275,7 +276,7 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
       aria-pressed={active}
       onClick={onClick}
       className={cx(
-        "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-body-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+        "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-body-medium outline-none lg:h-10 lg:px-5 lg:text-headline-medium transition-colors focus-visible:ring-2 focus-visible:ring-border-focus-ring",
         active ? "bg-accent-50 text-accent-700" : "bg-background-primary-default text-text-secondary shadow-card hover:text-text-primary",
       )}
     >

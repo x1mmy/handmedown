@@ -63,7 +63,7 @@ export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: s
   }
 
   return (
-    <div className="mt-6 grid items-start gap-6 px-4 lg:grid-cols-[320px_1fr] lg:px-0">
+    <div className="mt-6 grid items-start gap-6 px-4 lg:mt-8 lg:grid-cols-[360px_1fr] lg:gap-10 lg:px-0">
       <aside className="no-print rounded-3xl bg-background-primary-default p-4 shadow-card lg:sticky lg:top-24">
         <p className="text-headline-semibold text-text-primary">Cover</p>
         <div className="mt-3 flex flex-wrap gap-3">
@@ -90,7 +90,7 @@ export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: s
           </Switch>
         </div>
 
-        <p className="mt-3 text-body-regular text-text-secondary">
+        <p className="mt-3 text-body-regular text-text-secondary lg:text-headline-regular">
           {pages.length} pages, {snapshot.recipes.length} recipes, A5 {bleed ? "154 × 216mm" : "148 × 210mm"}
         </p>
 
@@ -149,7 +149,7 @@ export function PrintStudio({ bookId, snapshot, pdfEnabled = true }: { bookId: s
   );
 }
 
-const pageShell = "flex aspect-[148/210] min-w-0 flex-col justify-between overflow-hidden border-b border-separator-border p-5 lg:border-b-0 lg:border-e";
+const pageShell = "flex aspect-[148/210] min-w-0 flex-col justify-between overflow-hidden border-b border-separator-border p-5 lg:border-b-0 lg:border-e lg:p-8";
 
 function PageNumber({ n }: { n: number }) {
   return <p className="text-end text-caption-1-medium text-text-tertiary">{n}</p>;

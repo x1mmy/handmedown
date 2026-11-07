@@ -4,7 +4,7 @@
  */
 export const STASH_LABS_URL = "https://www.stashlabs.com.au/";
 
-export const FOOTER_TEXT = "Built by Stash Labs";
+export const FOOTER_TEXT = "Built by Stash Labs.";
 
 /** Soft-delete undo window. */
 export const UNDO_WINDOW_MS = 6_000;

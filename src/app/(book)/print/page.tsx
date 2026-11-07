@@ -11,7 +11,7 @@ export default async function PrintPage() {
   return (
     <Screen>
       <ScreenHeader title="Print" />
-      <p className="px-4 pt-1 text-body-regular text-text-secondary lg:px-0">Turn the book into an A5 copy for the shelf.</p>
+      <p className="px-4 pt-1 text-body-regular text-text-secondary lg:px-0 lg:text-headline-regular">Turn the book into an A5 copy for the shelf.</p>
       <PrintStudio bookId={book.id} snapshot={snapshot} pdfEnabled={pdfExportEnabled()} />
     </Screen>
   );

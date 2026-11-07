@@ -63,7 +63,8 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
   if (method !== "GET" && method !== "HEAD") {
     const limit = rateLimit(`${ip}:${a ?? ""}:${method}`);
     if (!limit.ok) return json({ message: "Slow down and try again" }, 429);
-    assertBodyLimit(request, a === "books" && c === "media" ? MAX_UPLOAD_REQUEST_BYTES : MAX_JSON_BYTES);
+    const upload = a === "books" && (c === "media" || (c === "recipes" && e === "photo"));
+    assertBodyLimit(request, upload ? MAX_UPLOAD_REQUEST_BYTES : MAX_JSON_BYTES);
   }
   const principal = await getPrincipal();
   const repo = getRepository();
@@ -76,6 +77,19 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
   if (a === "books" && b && c === "recipes" && !d && method === "POST") {
     const body = await readJson<RecipeInput>(request);
     return json(await repo.createRecipe(principal, b, body), 201);
+  }
+
+  if (a === "books" && b && c === "recipes" && d && e === "photo" && method === "POST") {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return json({ message: "Choose a photo" }, 422);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return json(await repo.setRecipePhoto(principal, b, d, { bytes, declaredMime: file.type || "application/octet-stream" }), 201);
+  }
+
+  if (a === "books" && b && c === "recipes" && d && e === "photo" && method === "DELETE") {
+    await repo.clearRecipePhoto(principal, b, d);
+    return json({ ok: true });
   }
 
   if (a === "books" && b && c === "recipes" && d && !e && method === "PATCH") {
@@ -155,7 +169,8 @@ async function dispatch(request: Request, slug: string[]): Promise<Response> {
       status: 200,
       headers: {
         "content-type": media.mime,
-        "cache-control": "private, max-age=3600",
+        // A media id never changes its bytes, so the phone can keep it.
+        "cache-control": "private, max-age=31536000, immutable",
         "x-content-type-options": "nosniff",
       },
     });

@@ -30,9 +30,9 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
   }
 
   return (
-    <div className="mt-6 grid gap-4 px-4 lg:grid-cols-2 lg:px-0">
+    <div className="mt-6 grid gap-4 px-4 lg:mt-8 lg:grid-cols-2 lg:gap-6 lg:px-0 xl:grid-cols-3">
       {desk.kitchens.map((kitchen) => (
-        <section key={kitchen.id} className="rounded-3xl bg-background-primary-default p-4 shadow-card">
+        <section key={kitchen.id} className="rounded-3xl bg-background-primary-default p-4 shadow-card lg:p-6">
           <div className="flex items-start justify-between gap-3">
             <h2 className="min-w-0 flex-1">
               <InlineName
@@ -72,7 +72,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
                   <Avatar key={member.userId} initials={initials(member.name)} alt={member.name} className="text-caption-1-semibold ring-2 ring-background-primary-default" />
                 ))}
               </div>
-              <span className="truncate text-body-regular text-text-secondary">{kitchen.members.map((member) => member.name).join(", ")}</span>
+              <span className="truncate text-body-regular text-text-secondary lg:text-headline-regular">{kitchen.members.map((member) => member.name).join(", ")}</span>
             </div>
           ) : null}
 
@@ -90,7 +90,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
 
       {owner ? (
         <form
-          className="rounded-3xl border border-dashed border-border-button-hover p-4"
+          className="rounded-3xl border border-dashed border-border-button-hover p-4 lg:p-6"
           onSubmit={(event) => {
             event.preventDefault();
             if (!name.trim()) return;
@@ -103,7 +103,7 @@ export function KitchenManager({ bookId, desk }: { bookId: string; desk: Kitchen
           }}
         >
           <p className="text-title-3-semibold text-text-primary">Add a kitchen</p>
-          <p className="mt-0.5 text-body-regular text-text-secondary">For another household in the family.</p>
+          <p className="mt-0.5 text-body-regular text-text-secondary lg:text-headline-regular">For another household in the family.</p>
           <div className="mt-4 flex items-end gap-2">
             <Input aria-label="New kitchen name" placeholder="Nan's Kitchen" value={name} onChange={setName} className="flex-1" fieldClassName="h-11" />
             <Button type="submit" className="h-11 rounded-xl px-4">

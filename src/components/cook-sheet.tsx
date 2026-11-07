@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RiAddLine,
+  RiCamera3Line,
   RiCheckLine,
   RiDeleteBinLine,
   RiFireFill,
@@ -19,7 +20,7 @@ import {
 
 import { BIG } from "@/components/app/screen";
 import { BackButton } from "@/components/book-controls";
-import { Button } from "@/components/base/buttons/button";
+import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { Drawer, DrawerBody, DrawerHeader } from "@/components/base/drawer/drawer";
 import { IconButton } from "@/components/base/buttons/icon-button";
@@ -181,13 +182,18 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
 
   return (
     <div className="pb-24 lg:pb-0">
-      <div className="relative lg:mx-auto lg:max-w-5xl lg:px-8 lg:pt-8">
-        <div className="relative aspect-[4/3] w-full overflow-hidden bg-background-tertiary-default lg:aspect-[21/9] lg:rounded-3xl">
+      <div className="relative lg:mx-auto lg:max-w-6xl lg:px-10 lg:pt-8 xl:max-w-7xl">
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-background-tertiary-default lg:aspect-[21/9] lg:max-h-[520px] lg:rounded-3xl">
           {recipe.heroUrl ? (
             <img src={recipe.heroUrl} alt="" className="size-full object-cover" />
           ) : (
-            <div className="flex size-full items-center justify-center bg-accent-50 p-10">
+            <div className="flex size-full flex-col items-center justify-center gap-4 bg-accent-50 p-10">
               <p className="max-w-md text-center font-hand text-title-1-medium text-accent-700">{recipe.marginNote || recipe.title}</p>
+              {recipe.canEdit ? (
+                <ButtonLink href={`/recipes/${recipe.id}/edit#photo`} variant="secondary" leadingIcon={RiCamera3Line} className="rounded-full px-4">
+                  Add a photo
+                </ButtonLink>
+              ) : null}
             </div>
           )}
           <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4 pt-[calc(env(safe-area-inset-top)+12px)]">
@@ -216,7 +222,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         </div>
       </div>
 
-      <article className="relative -mt-6 rounded-t-3xl bg-background-primary-default px-4 pt-6 lg:mx-auto lg:mt-0 lg:max-w-5xl lg:rounded-none lg:bg-transparent lg:px-8 lg:pt-8">
+      <article className="relative -mt-6 rounded-t-3xl bg-background-primary-default px-4 pt-6 lg:mx-auto lg:mt-0 lg:max-w-6xl lg:rounded-none lg:bg-transparent lg:px-10 lg:pt-10 xl:max-w-7xl">
         <AnimatePresence>
           {stamp > 0 ? (
             <motion.p
@@ -236,7 +242,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         <p className="text-body-medium text-accent-600">
           {COURSE_LABEL[recipe.course]}, {recipe.kitchenName}
         </p>
-        <h1 className="mt-1 max-w-2xl pe-20 text-display-4-bold text-text-primary">{recipe.title}</h1>
+        <h1 className="mt-1 max-w-3xl pe-20 text-display-4-bold text-text-primary lg:text-display-2-bold">{recipe.title}</h1>
         <p className="mt-2 text-headline-regular text-text-secondary">
           Handed down by <span className="text-text-primary">{recipe.handedDownBy}</span>
           {recipe.recipeBy && recipe.recipeBy !== recipe.handedDownBy ? <>, from {recipe.recipeBy}&apos;s kitchen</> : null}
@@ -261,8 +267,8 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
           </Button>
         </div>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(320px,380px)_1fr] lg:gap-12">
-          <section aria-labelledby="ingredients" className="self-start lg:sticky lg:top-24">
+        <div className="mt-8 grid gap-8 lg:mt-12 lg:grid-cols-[minmax(340px,420px)_1fr] lg:gap-14">
+          <section aria-labelledby="ingredients" className="self-start lg:sticky lg:top-24 lg:rounded-3xl lg:bg-background-primary-default lg:p-6 lg:shadow-card">
             <div className="flex items-center justify-between gap-3">
               <h2 id="ingredients" className="text-title-2-semibold text-text-primary">
                 Ingredients
@@ -335,7 +341,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
                       >
                         {isDone ? <RiCheckLine className="size-4" aria-hidden /> : index + 1}
                       </span>
-                      <span className="pt-1 text-headline-regular text-text-primary">{stepText}</span>
+                      <span className="pt-1 text-headline-regular text-text-primary lg:text-title-3-regular">{stepText}</span>
                     </button>
                   </li>
                 );

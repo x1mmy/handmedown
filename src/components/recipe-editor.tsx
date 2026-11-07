@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RiCamera3Line } from "@remixicon/react";
 
 import { BIG } from "@/components/app/screen";
 import { BackButton } from "@/components/book-controls";
@@ -41,6 +42,11 @@ export function RecipeEditor({
   const [steps, setSteps] = useState(recipe?.steps.join("\n") ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const shownPhoto = photoPreview ?? (removePhoto ? null : (recipe?.heroUrl ?? null));
   const kitchenName = kitchens.find((kitchen) => kitchen.id === kitchenId)?.name ?? "Kitchen";
 
   useEffect(() => {
@@ -48,6 +54,42 @@ export function RecipeEditor({
     setDeviceName(localStorage.getItem("hmd-device-name") ?? "");
     if (!recipe?.recipeBy && storedBy) setRecipeBy(storedBy);
   }, [recipe?.recipeBy]);
+
+  // Free the preview blob when it is replaced or the screen closes.
+  useEffect(() => {
+    if (!photoPreview) return;
+    return () => URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
+
+  function pickPhoto(file: File) {
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setRemovePhoto(false);
+  }
+
+  function clearPhoto() {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    setRemovePhoto(true);
+  }
+
+  async function savePhoto(id: string): Promise<boolean> {
+    try {
+      if (photoFile) {
+        const form = new FormData();
+        form.set("file", photoFile);
+        const response = await fetch(`/api/books/${bookId}/recipes/${id}/photo`, { method: "POST", body: form });
+        return response.ok;
+      }
+      if (removePhoto && recipe?.heroUrl) {
+        const response = await fetch(`/api/books/${bookId}/recipes/${id}/photo`, { method: "DELETE" });
+        return response.ok;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -79,7 +121,8 @@ export function RecipeEditor({
         : (await api<{ id: string }>(`/api/books/${bookId}/recipes`, { method: "POST", body: JSON.stringify(body) })).id;
       if (recipeBy.trim()) localStorage.setItem("hmd-recipe-by", recipeBy.trim());
       if (deviceName.trim()) localStorage.setItem("hmd-device-name", deviceName.trim());
-      toast.success(recipe ? "Changes saved" : "Added to the book");
+      if (await savePhoto(id)) toast.success(recipe ? "Changes saved" : "Added to the book");
+      else toast.error("Recipe saved, but the photo did not upload. Try again from Edit.");
       router.push(`/recipes/${id}`);
       router.refresh();
     } catch (caught) {
@@ -95,7 +138,7 @@ export function RecipeEditor({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl lg:max-w-5xl lg:px-8">
+    <div className="mx-auto w-full max-w-2xl lg:max-w-6xl lg:px-8">
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 bg-background-secondary-default/85 px-4 pt-[calc(env(safe-area-inset-top)+8px)] pb-2 backdrop-blur-xl lg:top-16 lg:px-0 lg:pt-6">
         <BackButton fallback={recipe ? `/recipes/${recipe.id}` : "/"} />
         <p className="truncate text-headline-semibold text-text-primary">{recipe ? "Edit recipe" : "New recipe"}</p>
@@ -104,8 +147,49 @@ export function RecipeEditor({
         </Button>
       </header>
 
-      <form id="recipe-form" noValidate onSubmit={(event) => void save(event)} className="grid items-start gap-8 px-4 pt-4 lg:grid-cols-[1fr_340px] lg:px-0">
+      <form id="recipe-form" noValidate onSubmit={(event) => void save(event)} className="grid items-start gap-8 px-4 pt-4 lg:grid-cols-[1fr_380px] lg:gap-10 lg:px-0">
         <div className="grid gap-6">
+          <section id="photo" aria-label="Photo" className="scroll-mt-24">
+            <input
+              ref={picker}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) pickPhoto(file);
+              }}
+            />
+            {shownPhoto ? (
+              <div className="overflow-hidden rounded-3xl bg-background-primary-default shadow-card">
+                <img src={shownPhoto} alt="Recipe photo" className="aspect-[4/3] w-full object-cover" />
+                <div className="flex gap-2 p-3">
+                  <Button type="button" variant="secondary" leadingIcon={RiCamera3Line} className="h-11 flex-1 rounded-xl" onClick={() => picker.current?.click()}>
+                    Change
+                  </Button>
+                  <Button type="button" variant="secondary" className="h-11 flex-1 rounded-xl" onClick={clearPhoto}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => picker.current?.click()}
+                className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-border-button-hover bg-background-primary-default text-text-secondary outline-none transition-colors hover:bg-background-primary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                <span className="flex size-14 items-center justify-center rounded-full bg-accent-50 text-accent-600">
+                  <RiCamera3Line className="size-7" aria-hidden />
+                </span>
+                <span className="text-headline-semibold text-text-primary">Add a photo</span>
+                <span className="text-body-regular">Take one or pick from your library</span>
+              </button>
+            )}
+          </section>
+
           <Card title="The dish">
             <Input label="Recipe name" value={title} onChange={setTitle} isRequired fieldClassName="h-11" />
             <div className="grid grid-cols-2 gap-3">

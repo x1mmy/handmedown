@@ -6,16 +6,16 @@ import { cx } from "@/utils/cx";
 
 /** Screen column: phone width first, a wider reading column on desktop. */
 export function Screen({ children, className }: { children: ReactNode; className?: string }) {
-  return <main className={cx("mx-auto w-full max-w-2xl lg:max-w-5xl lg:px-8", className)}>{children}</main>;
+  return <main className={cx("mx-auto w-full max-w-2xl lg:max-w-6xl lg:px-10 xl:max-w-7xl", className)}>{children}</main>;
 }
 
 /** iOS-style large title. */
 export function ScreenHeader({ eyebrow, title, action }: { eyebrow?: ReactNode; title: ReactNode; action?: ReactNode }) {
   return (
-    <header className="flex items-end justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+24px)] lg:px-0 lg:pt-10">
+    <header className="flex items-end justify-between gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+24px)] lg:px-0 lg:pb-4 lg:pt-14">
       <div className="min-w-0 flex-1">
         {eyebrow ? <div className="text-body-medium text-text-secondary">{eyebrow}</div> : null}
-        <h1 className="truncate text-display-4-bold text-text-primary">{title}</h1>
+        <h1 className="truncate text-display-4-bold text-text-primary lg:text-display-3-bold">{title}</h1>
       </div>
       {action ? <div className="shrink-0 pb-1">{action}</div> : null}
     </header>
@@ -34,10 +34,10 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section className={cx("mt-8", className)}>
+    <section className={cx("mt-8 lg:mt-12", className)}>
       {title ? (
         <div className="mb-3 flex items-baseline justify-between gap-3 px-4 lg:px-0">
-          <h2 className="text-title-2-semibold text-text-primary">{title}</h2>
+          <h2 className="text-title-2-semibold text-text-primary lg:text-title-1-semibold">{title}</h2>
           {action}
         </div>
       ) : null}
@@ -75,7 +75,7 @@ export function Row({
       <span className="flex min-h-14 min-w-0 flex-1 items-center gap-3 border-b border-separator-border py-2.5 pe-4 group-last/row:border-b-0">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-headline-medium text-text-primary">{title}</span>
-          {subtitle ? <span className="mt-0.5 block truncate text-body-regular text-text-secondary">{subtitle}</span> : null}
+          {subtitle ? <span className="mt-0.5 block truncate text-body-regular text-text-secondary lg:text-headline-regular">{subtitle}</span> : null}
         </span>
         {trailing}
         {chevron ? <RiArrowRightSLine className="size-5 shrink-0 text-foreground-icon-tertiary rtl:-scale-x-100" aria-hidden /> : null}

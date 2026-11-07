@@ -52,7 +52,7 @@ describe("migration contract", () => {
 describe("footer credit", () => {
   it("uses the confirmed Stash Labs URL and the exact credit text", () => {
     expect(STASH_LABS_URL).toBe("https://www.stashlabs.com.au/");
-    expect(FOOTER_TEXT).toBe("Built by Stash Labs");
+    expect(FOOTER_TEXT).toBe("Built by Stash Labs.");
     const footer = readFileSync("src/components/site-footer.tsx", "utf8");
     expect(footer).toContain("STASH_LABS_URL");
     expect(footer).toContain("FOOTER_TEXT");

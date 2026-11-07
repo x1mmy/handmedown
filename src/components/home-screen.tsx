@@ -59,7 +59,15 @@ export function HomeScreen({
   return (
     <Screen>
       <ScreenHeader
-        eyebrow={<Greeting />}
+        eyebrow={
+          <>
+            <span className="mb-3 flex items-center gap-2 text-headline-semibold text-text-primary lg:hidden">
+              <img src="/logo.png" alt="" width={28} height={28} className="size-7 rounded-lg" />
+              Hand Me Down
+            </span>
+            <Greeting />
+          </>
+        }
         title={book.canEditTitle ? <TitleInput bookId={book.id} title={book.title} /> : book.title}
         action={
           <ButtonLink href="/recipes/new" iconOnly leadingIcon={RiAddLine} aria-label="New recipe" className="size-11 rounded-full lg:hidden" />
@@ -74,7 +82,7 @@ export function HomeScreen({
           onChange={setSearch}
           onSubmit={(value) => go(value)}
           onClear={() => go("")}
-          className="w-full lg:max-w-md"
+          className="w-full lg:max-w-xl"
           fieldClassName="h-11"
         />
       </div>
@@ -113,7 +121,7 @@ export function HomeScreen({
       ) : (
         <>
           {totalCooked > 0 ? (
-            <p className="flex items-center gap-1.5 px-4 pt-4 text-body-medium text-text-secondary lg:px-0">
+            <p className="flex items-center gap-1.5 px-4 pt-4 text-body-medium text-text-secondary lg:px-0 lg:text-headline-medium">
               <RiFireFill className="size-4 text-accent-500" aria-hidden />
               {totalCooked} {totalCooked === 1 ? "meal" : "meals"} cooked from this book so far
             </p>
@@ -179,7 +187,7 @@ function Greeting() {
 
 function Shelf({ children }: { children: React.ReactNode }) {
   return (
-    <div className="shelf flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 lg:scroll-px-0 lg:px-0">{children}</div>
+    <div className="shelf flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 lg:scroll-px-0 lg:gap-5 lg:px-0">{children}</div>
   );
 }
 
@@ -188,7 +196,7 @@ function ShelfCard({ recipe, index, size }: { recipe: RecipeCard; index: number;
   const large = size === "large";
   return (
     <motion.div
-      className={cx("shrink-0 snap-start", large ? "w-[72%] max-w-72" : "w-36")}
+      className={cx("shrink-0 snap-start", large ? "w-[72%] max-w-72 lg:w-80 lg:max-w-none" : "w-36 lg:w-48")}
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: Math.min(index, 6) * 0.05, ease: [0.32, 0.72, 0, 1] }}
@@ -211,7 +219,7 @@ function ShelfCard({ recipe, index, size }: { recipe: RecipeCard; index: number;
           )}
         </div>
         <p className={cx("mt-2 line-clamp-2 text-text-primary", large ? "text-title-3-semibold" : "text-headline-semibold")}>{recipe.title}</p>
-        <p className="mt-0.5 truncate text-body-regular text-text-secondary">
+        <p className="mt-0.5 truncate text-body-regular text-text-secondary lg:text-headline-regular">
           {large ? `${recipe.kitchenName}, ${formatMinutes(recipe.minutes)}` : `Made ${recipe.cookedCount}×`}
         </p>
       </Link>
@@ -221,26 +229,54 @@ function ShelfCard({ recipe, index, size }: { recipe: RecipeCard; index: number;
 
 function RecipeRows({ recipes }: { recipes: RecipeCard[] }) {
   return (
-    <Grouped>
-      {recipes.map((recipe) => (
-        <Row
-          key={recipe.id}
-          href={`/recipes/${recipe.id}`}
-          leading={<Thumb src={recipe.heroUrl} note={recipe.marginNote} />}
-          title={recipe.title}
-          subtitle={`${recipe.kitchenName}, ${formatMinutes(recipe.minutes)}`}
-          trailing={recipe.favourite ? <RiHeart3Fill className="size-4 shrink-0 text-accent-500" aria-label="Favourite" /> : undefined}
-        />
-      ))}
-    </Grouped>
+    <>
+      <Grouped className="lg:hidden">
+        {recipes.map((recipe) => (
+          <Row
+            key={recipe.id}
+            href={`/recipes/${recipe.id}`}
+            leading={<Thumb src={recipe.heroUrl} note={recipe.marginNote} />}
+            title={recipe.title}
+            subtitle={`${recipe.kitchenName}, ${formatMinutes(recipe.minutes)}`}
+            trailing={recipe.favourite ? <RiHeart3Fill className="size-4 shrink-0 text-accent-500" aria-label="Favourite" /> : undefined}
+          />
+        ))}
+      </Grouped>
+      <ul className="hidden gap-6 lg:grid lg:grid-cols-3 xl:grid-cols-4">
+        {recipes.map((recipe) => (
+          <li key={recipe.id}>
+            <Link href={`/recipes/${recipe.id}`} className="group block rounded-3xl outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring">
+              <div className="relative aspect-[4/3] overflow-hidden rounded-3xl bg-background-tertiary-default">
+                {recipe.heroUrl ? (
+                  <img src={recipe.heroUrl} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" />
+                ) : (
+                  <div className="flex size-full items-center bg-accent-50 p-6">
+                    <p className="line-clamp-4 font-hand text-title-2-medium text-accent-700">{recipe.marginNote || recipe.title}</p>
+                  </div>
+                )}
+                {recipe.favourite ? (
+                  <span className="absolute end-3 top-3 flex size-8 items-center justify-center rounded-full bg-background-primary-default/90 shadow-sm backdrop-blur-md">
+                    <RiHeart3Fill className="size-4 text-accent-500" aria-label="Favourite" />
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-3 line-clamp-2 text-title-3-semibold text-text-primary">{recipe.title}</p>
+              <p className="mt-0.5 truncate text-headline-regular text-text-secondary">
+                {recipe.kitchenName}, {formatMinutes(recipe.minutes)}
+              </p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
 function Empty({ title, body, action, className }: { title: string; body: string; action?: React.ReactNode; className?: string }) {
   return (
-    <div className={cx("mx-4 rounded-3xl bg-background-primary-default px-6 py-12 text-center shadow-card lg:mx-0", className)}>
+    <div className={cx("mx-4 rounded-3xl bg-background-primary-default px-6 py-12 text-center shadow-card lg:mx-0 lg:py-20", className)}>
       <p className="text-title-3-semibold text-text-primary">{title}</p>
-      <p className="mt-1 text-body-regular text-text-secondary">{body}</p>
+      <p className="mt-1 text-body-regular text-text-secondary lg:text-headline-regular">{body}</p>
       {action}
     </div>
   );
