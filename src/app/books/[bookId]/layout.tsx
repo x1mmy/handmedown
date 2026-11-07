@@ -1,4 +1,5 @@
 import { ExampleStrip, Masthead } from "@/components/chrome";
+import { PageTurn } from "@/components/motion";
 import { loadBook } from "@/server/load";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function BookLayout({
     <>
       {book.isExample ? <ExampleStrip /> : null}
       <Masthead book={book} />
-      {children}
+      <PageTurn>{children}</PageTurn>
     </>
   );
 }

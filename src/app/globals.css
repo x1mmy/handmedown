@@ -51,17 +51,37 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-.dog-ear::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 22px;
-  height: 22px;
-  background: #efece4;
-  border-left: 1px solid #e3ded4;
-  border-bottom: 1px solid #e3ded4;
-  clip-path: polygon(0 0, 100% 100%, 100% 0);
+.skeleton {
+  background: #f4efe6;
+  animation: paper-breathe 1.8s ease-out infinite;
+}
+
+@keyframes paper-breathe {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button:not([data-motion]),
+  .press {
+    transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  button:not([data-motion]):active,
+  .press:active {
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .tape::before {

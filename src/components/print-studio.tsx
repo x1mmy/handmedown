@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useMemo, useRef, useState } from "react";
 
-import { paginate } from "@/lib/print/paginate";
+import { tween } from "@/components/motion";
+import { paginate, type PrintPage } from "@/lib/print/paginate";
 import { COVER_CLOTHS, type CoverId, type ExportSnapshot } from "@/lib/types";
 
 export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: ExportSnapshot }) {
@@ -11,7 +13,14 @@ export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: Ex
   const [spread, setSpread] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const reduce = useReducedMotion();
+  const opened = useRef(false);
+  const previousSpread = useRef(0);
+  const direction = spread >= previousSpread.current ? 1 : -1;
+  previousSpread.current = spread;
   const pages = useMemo(() => paginate({ ...snapshot, clothId, bleed }), [snapshot, clothId, bleed]);
+  const flip = opened.current;
+  if (!opened.current) opened.current = true;
   const left = pages[spread * 2];
   const right = pages[spread * 2 + 1];
   const spreads = Math.ceil(pages.length / 2);
@@ -73,21 +82,42 @@ export function PrintStudio({ bookId, snapshot }: { bookId: string; snapshot: Ex
           </button>
         </div>
       </aside>
-      <div className={`grid min-w-0 bg-sheet ${bleed ? "outline outline-1 outline-offset-2 outline-dashed outline-accent" : ""} desk:grid-cols-2 ${bleed ? "" : "border border-[#cfc8ba]"}`}>
-        {left ? <PageView page={left} /> : null}
-        {right ? <PageView page={right} /> : <div className="hidden desk:block" />}
+      <div className="min-w-0" style={{ perspective: "1200px" }}>
+        <motion.div
+          key={spread}
+          className={`grid min-w-0 bg-sheet ${bleed ? "outline outline-1 outline-offset-2 outline-dashed outline-accent" : ""} desk:grid-cols-2 ${bleed ? "" : "border border-[#cfc8ba]"}`}
+          initial={!reduce && flip ? { opacity: 0, rotateY: direction * 12 } : false}
+          animate={{ opacity: 1, rotateY: 0 }}
+          transition={reduce ? { duration: 0 } : tween(0.26)}
+        >
+          {left ? <PageView page={left} /> : null}
+          {right ? <PageView page={right} /> : <div className="hidden desk:block" />}
+        </motion.div>
       </div>
     </div>
   );
 }
 
-function PageView({ page }: { page: ReturnType<typeof paginate>[number] }) {
+function PageView({ page }: { page: PrintPage }) {
+  const reduce = useReducedMotion();
   if (page.kind === "cover") {
     return (
-      <section className="flex aspect-[148/210] min-w-0 flex-col items-center justify-center gap-4 px-6 text-center" style={{ background: page.background, color: page.color }}>
-        <p className="micro" style={{ color: "inherit" }}>Family edition · Vol. I</p>
-        <h2 className="font-serif text-[28px] font-normal leading-tight">{page.title}</h2>
-        <p className="font-serif text-sm italic opacity-80">{page.subtitle}</p>
+      <section className="relative aspect-[148/210] min-w-0 overflow-hidden">
+        <AnimatePresence initial={false}>
+          <motion.div
+            key={page.background}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center"
+            style={{ background: page.background, color: page.color }}
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduce ? { duration: 0 } : tween(0.28)}
+          >
+            <p className="micro" style={{ color: "inherit" }}>Family edition · Vol. I</p>
+            <h2 className="font-serif text-[28px] font-normal leading-tight">{page.title}</h2>
+            <p className="font-serif text-sm italic opacity-80">{page.subtitle}</p>
+          </motion.div>
+        </AnimatePresence>
       </section>
     );
   }

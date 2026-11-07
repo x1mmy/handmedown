@@ -49,9 +49,9 @@ function TitleField({ book }: { book: BookDetail }) {
 }
 
 export function solidClass(extra = "") {
-  return `inline-flex min-h-11 items-center justify-center border border-ink bg-ink px-5 text-center text-[12px] font-medium uppercase tracking-[0.08em] text-sheet ${extra}`;
+  return `press inline-flex min-h-11 items-center justify-center border border-ink bg-ink px-5 text-center text-[12px] font-medium uppercase tracking-[0.08em] text-sheet ${extra}`;
 }
 
 export function lineClass(extra = "") {
-  return `inline-flex min-h-11 items-center justify-center border border-ink bg-transparent px-4 text-center text-[12px] font-medium uppercase tracking-[0.08em] text-ink ${extra}`;
+  return `press inline-flex min-h-11 items-center justify-center border border-ink bg-transparent px-4 text-center text-[12px] font-medium uppercase tracking-[0.08em] text-ink ${extra}`;
 }

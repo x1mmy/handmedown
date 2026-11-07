@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { lineClass, solidClass } from "@/components/chrome";
+import { RecipeGrid } from "@/components/recipe-grid";
 import { COURSE_LABEL, formatMinutes } from "@/lib/format";
 import { COURSES, type Course } from "@/lib/types";
 import { loadBook } from "@/server/load";
@@ -116,36 +117,7 @@ export default async function RecipesPage({
         <p className="py-10 text-inksoft">Nothing in the book matches.</p>
       ) : null}
 
-      <div className="grid grid-cols-1 border-l border-rule desk:grid-cols-3">
-        {recipes.map((recipe) => (
-          <Link
-            key={recipe.id}
-            href={`/books/${bookId}/recipes/${recipe.id}`}
-            className={`dog-ear relative flex flex-col justify-between border-b border-r border-rule p-5 hover:bg-sheet/70 ${
-              recipe.favourite ? "" : "before:hidden"
-            } ${recipe.favourite ? "" : "[&::after]:hidden"}`}
-          >
-            {recipe.heroUrl ? (
-              <img src={recipe.heroUrl} alt="" className="mb-4 aspect-[4/3] w-full border border-rule object-cover" />
-            ) : (
-              <div className="mb-4 flex aspect-[4/3] flex-col justify-between border border-rule bg-sheet p-4">
-                <span className="micro">Index card · No photo</span>
-                <p className="font-hand text-xl leading-snug text-handink">&ldquo;{recipe.marginNote}&rdquo;</p>
-                <span className="micro">{recipe.ingredientCount} ingredients</span>
-              </div>
-            )}
-            <p className="micro">
-              {COURSE_LABEL[recipe.course]} · {recipe.kitchenName} · {formatMinutes(recipe.minutes)}
-            </p>
-            <h3 className="mt-1 font-serif text-[23px] font-normal leading-tight">{recipe.title}</h3>
-            <p className="mt-1 font-serif text-[15px] italic text-inksoft">Handed down by {recipe.handedDownBy}</p>
-            <div className="mt-4 flex items-center justify-between border-t border-rule pt-3">
-              <span className="micro">{recipe.favourite ? "Pinned favourite" : "In the book"}</span>
-              <span className="micro">Made {recipe.cookedCount}×</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+      <RecipeGrid bookId={bookId} recipes={recipes} />
     </main>
   );
 }

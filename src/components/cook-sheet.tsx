@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { FoldedCorner, InkTick, RollingText, tween } from "@/components/motion";
 import { ApiError, api } from "@/lib/client-api";
 import { formatQuantity, scaleServings } from "@/lib/fractions";
 import { COURSE_LABEL, formatMinutes } from "@/lib/format";
@@ -20,6 +22,10 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(Boolean(recipe.deletedAt));
+  const [stamp, setStamp] = useState(0);
+  const reduce = useReducedMotion();
+  const stepRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const stepped = useRef(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem(`hmd-checks:${recipe.id}`);
@@ -68,6 +74,18 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
 
   const activeStep = done.findIndex((item) => !item);
   const checkedCount = checked.filter(Boolean).length;
+
+  useEffect(() => {
+    if (!stepped.current) {
+      stepped.current = true;
+      return;
+    }
+    if (activeStep < 0) return;
+    stepRefs.current[activeStep]?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }, [activeStep, reduce]);
   const quantities = useMemo(
     () =>
       recipe.ingredients.map((ingredient) => {
@@ -93,6 +111,7 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
         { method: "POST", body: JSON.stringify({ idempotencyKey: key }) },
       );
       sessionStorage.removeItem(storageKey);
+      if (result.cookedCount !== cooked) setStamp((value) => value + 1);
       setCooked(result.cookedCount);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not record this cooking");
@@ -138,7 +157,8 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
   }
 
   return (
-    <article className={`border border-rule bg-sheet px-5 py-6 desk:px-12 desk:py-12 ${cookMode ? "cook-on" : ""}`}>
+    <article className={`relative border border-rule bg-sheet px-5 py-6 desk:px-12 desk:py-12 ${cookMode ? "cook-on" : ""}`}>
+      <FoldedCorner show={favourite} />
       <header className="flex flex-wrap items-end justify-between gap-4 border-b-[1.5px] border-ink pb-5">
         <div>
           <p className="micro">
@@ -151,9 +171,29 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
           <button type="button" className={line} aria-pressed={cookMode} onClick={() => setCookMode((value) => !value)}>
             Propped-phone cook mode: {cookMode ? "On" : "Off"}
           </button>
-          <button type="button" className={solid} onClick={() => void madeThis()}>
-            We made this · {cooked}
-          </button>
+          <motion.button
+            type="button"
+            data-motion="true"
+            className={`${solid} relative`}
+            whileTap={reduce ? undefined : { scale: 0.98 }}
+            transition={tween(0.16)}
+            onClick={() => void madeThis()}
+          >
+            We made this · <RollingText value={String(cooked)} />
+            <AnimatePresence>
+              {stamp > 0 ? (
+                <motion.span
+                  key={stamp}
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 border border-[#f3c6b8]"
+                  initial={{ opacity: 0.85 }}
+                  animate={{ opacity: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={tween(0.28)}
+                />
+              ) : null}
+            </AnimatePresence>
+          </motion.button>
           <button type="button" className={line} onClick={() => void toggleFavourite()}>
             {favourite ? "Pinned favourite" : "Pin favourite"}
           </button>
@@ -183,7 +223,10 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
           <div className="flex items-center justify-between border-b border-rule pb-3">
             <div>
               <div className="micro">Servings</div>
-              <strong className="text-lg tabular-nums">{servings} servings</strong>
+              <strong className="inline-flex items-baseline gap-2 text-lg">
+                <RollingText value={String(servings)} />
+                <span>servings</span>
+              </strong>
             </div>
             <div className="flex gap-2">
               <button type="button" className={step} aria-label="Decrease servings" onClick={() => setServings((value) => Math.max(1, value - 1))}>
@@ -197,10 +240,12 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
           <p className="micro mb-2 mt-4">
             {checkedCount} of {recipe.ingredients.length} ingredients checked
           </p>
-          <div className="mb-3 h-0.5 bg-rule">
-            <div
-              className="h-full bg-ink"
-              style={{ width: `${recipe.ingredients.length ? Math.round((checkedCount / recipe.ingredients.length) * 100) : 0}%` }}
+          <div className="mb-3 h-0.5 overflow-hidden bg-rule">
+            <motion.div
+              className="h-full w-full origin-left bg-ink"
+              initial={false}
+              animate={{ scaleX: recipe.ingredients.length ? checkedCount / recipe.ingredients.length : 0 }}
+              transition={reduce ? { duration: 0 } : tween(0.28)}
             />
           </div>
           <ul>
@@ -210,11 +255,21 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
                   type="button"
                   onClick={() => setChecked((current) => current.map((item, itemIndex) => (itemIndex === index ? !item : item)))}
                   className={`flex min-h-11 w-full items-center justify-between gap-3 border-b border-rule py-2 text-left tabular-nums [font-variant-numeric:tabular-nums_diagonal-fractions] ${
-                    checked[index] ? "text-inkmuted line-through" : ""
-                  } ${cookMode ? "text-[17px]" : ""}`}
+                    cookMode ? "text-[17px]" : ""
+                  }`}
                 >
-                  <span>{ingredient.item}</span>
-                  <span className="font-semibold">{quantities[index]}</span>
+                  <InkTick checked={Boolean(checked[index])} />
+                  <span className={`relative min-w-0 flex-1 ${checked[index] ? "text-inkmuted" : ""}`}>
+                    {ingredient.item}
+                    <motion.span
+                      aria-hidden
+                      className="absolute left-0 top-1/2 h-px w-full origin-left bg-current"
+                      initial={false}
+                      animate={{ scaleX: checked[index] ? 1 : 0 }}
+                      transition={reduce ? { duration: 0 } : tween(0.24)}
+                    />
+                  </span>
+                  <RollingText value={quantities[index] ?? ""} className="font-semibold" />
                 </button>
               </li>
             ))}
@@ -231,32 +286,60 @@ export function CookSheet({ recipe }: { recipe: RecipeDetail }) {
             const isDone = done[index];
             const isActive = index === activeStep;
             return (
-              <button
+              <motion.button
                 key={stepText}
                 type="button"
+                ref={(node) => {
+                  stepRefs.current[index] = node;
+                }}
                 onClick={() => setDone((current) => current.map((item, itemIndex) => (itemIndex === index ? !item : item)))}
-                className={`block w-full border-b border-rule py-4 pl-4 text-left ${
-                  isActive ? "border-l-2 border-l-accent bg-[#fdfbf7] pr-3" : "border-l-2 border-l-transparent"
-                } ${isDone ? "opacity-40" : ""}`}
+                className="relative block w-full border-b border-rule py-4 pl-4 text-left"
+                initial={false}
+                animate={{ opacity: isDone ? 0.34 : 1, x: isActive ? 4 : 0 }}
+                transition={reduce ? { duration: 0 } : tween(0.24)}
               >
+                <motion.span
+                  aria-hidden
+                  className="absolute bottom-0 left-0 top-0 w-0.5 origin-top bg-accent"
+                  initial={false}
+                  animate={{ scaleY: isActive ? 1 : 0 }}
+                  transition={reduce ? { duration: 0 } : tween(0.24)}
+                />
                 <div className={`micro ${isActive ? "text-accent" : ""}`}>
                   Step {String(index + 1).padStart(2, "0")} · {isDone ? "Completed" : isActive ? "Active step" : "Waiting"}
                 </div>
                 <p className={cookMode ? "text-[21px] leading-relaxed" : ""}>{stepText}</p>
-              </button>
+              </motion.button>
             );
           })}
         </div>
       </div>
 
-      {toast ? (
-        <div className="fixed bottom-[calc(20px+env(safe-area-inset-bottom))] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-4 bg-ink px-5 py-3 text-[13px] text-sheet">
-          <span>{toast}</span>
-          <button type="button" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#f3c6b8]" onClick={() => void undo()}>
-            Undo
-          </button>
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {toast ? (
+          <motion.div
+            key="undo"
+            role="status"
+            className="fixed bottom-[calc(20px+env(safe-area-inset-bottom))] left-1/2 z-[60] flex items-center gap-4 overflow-hidden bg-ink px-5 py-3 text-[13px] text-sheet"
+            initial={reduce ? { opacity: 1, y: 0, x: "-50%" } : { opacity: 0, y: 16, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={reduce ? { opacity: 0, x: "-50%" } : { opacity: 0, y: 12, x: "-50%" }}
+            transition={tween(0.24)}
+          >
+            <span>{toast}</span>
+            <button type="button" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#f3c6b8]" onClick={() => void undo()}>
+              Undo
+            </button>
+            <motion.span
+              aria-hidden
+              className="absolute bottom-0 left-0 h-px w-full origin-left bg-[#f3c6b8]"
+              initial={{ scaleX: 1 }}
+              animate={{ scaleX: reduce ? 1 : 0 }}
+              transition={{ duration: reduce ? 0 : 6, ease: "linear" }}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </article>
   );
 }
