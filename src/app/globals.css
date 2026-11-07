@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: #faf8f4;
+}
+
+body {
+  overflow-x: clip;
+  min-height: 100dvh;
+  background-color: #faf8f4;
+  background-image: radial-gradient(rgba(23, 22, 20, 0.028) 1px, transparent 0);
+  background-size: 18px 18px;
+  color: #171614;
+  font-variant-numeric: tabular-nums;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 1px solid #9e3b24;
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: #857f77;
+}
+
+.micro {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #857f77;
+  font-variant-numeric: tabular-nums;
+}
+
+.skeleton {
+  background: #f4efe6;
+  animation: paper-breathe 700ms ease-out 1 forwards;
+}
+
+@keyframes paper-breathe {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button:not([data-motion]),
+  .press {
+    transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  button:not([data-motion]):active,
+  .press:active {
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.tape::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  left: 28px;
+  width: 68px;
+  height: 18px;
+  background: rgba(230, 219, 194, 0.72);
+  transform: rotate(-1.5deg);
+}

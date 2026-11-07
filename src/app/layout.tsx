@@ -1,0 +1,47 @@
+import type { Metadata, Viewport } from "next";
+import { Caveat, Inter, Newsreader } from "next/font/google";
+
+import { MotionRoot } from "@/components/motion-root";
+import { MotionShell } from "@/components/motion";
+import { SiteFooter } from "@/components/site-footer";
+
+import "./globals.css";
+
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const serif = Newsreader({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
+  display: "swap",
+});
+const hand = Caveat({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-hand", display: "swap" });
+
+export const metadata: Metadata = {
+  title: "Hand Me Down",
+  description: "A private family recipe book, kept by kitchen.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  colorScheme: "light",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className={`${sans.variable} ${serif.variable} ${hand.variable}`}>
+      <body className="flex min-h-dvh flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-sans text-[15px] leading-normal text-ink antialiased">
+        <MotionRoot>
+          <div className="flex min-h-dvh flex-col">
+            <div className="flex-1">
+              <MotionShell>{children}</MotionShell>
+            </div>
+            <SiteFooter />
+          </div>
+        </MotionRoot>
+      </body>
+    </html>
+  );
+}
